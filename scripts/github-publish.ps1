@@ -8,8 +8,9 @@ $root = Split-Path $PSScriptRoot -Parent
 Set-Location -LiteralPath $root
 $gh = Join-Path $root '.tools\github-cli\gh.exe'
 if (-not (Test-Path -LiteralPath $gh)) { throw 'Official GitHub CLI is missing. Install gh or prepare the local .tools/github-cli/gh.exe first.' }
-& $gh auth status --hostname github.com *> $null
-if ($LASTEXITCODE -ne 0) {
+$authCode = 1
+try { & $gh auth status --hostname github.com *> $null; $authCode = $LASTEXITCODE } catch { $authCode = 1 }
+if ($authCode -ne 0) {
     Write-Host 'Authorize GitHub CLI in your browser. Do not send passwords or tokens to chat.'
     & $gh auth login --hostname github.com --git-protocol https --web
     if ($LASTEXITCODE -ne 0) { throw 'GitHub authorization did not complete. No repository was published.' }
@@ -20,8 +21,10 @@ $changes = & git status --porcelain
 if ($LASTEXITCODE -ne 0 -or $changes) { throw 'Working tree has uncommitted files. Review and commit before publishing.' }
 $repo = $Owner + '/' + $Repository
 $expectedRemote = 'https://github.com/' + $repo + '.git'
-$existing = & $gh repo view $repo --json nameWithOwner,isPrivate 2>$null
-if ($LASTEXITCODE -eq 0) {
+$repoCode = 1
+$existing = $null
+try { $existing = & $gh repo view $repo --json nameWithOwner,isPrivate 2>$null; $repoCode = $LASTEXITCODE } catch { $repoCode = 1 }
+if ($repoCode -eq 0) {
     $details = $existing | ConvertFrom-Json
     if (-not $details.isPrivate -or $details.nameWithOwner -ne $repo) { throw 'Target is not the expected private repository. Nothing pushed.' }
     $origins = & git remote
