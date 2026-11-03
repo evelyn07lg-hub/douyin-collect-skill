@@ -133,7 +133,9 @@ class Service:
         result = {'destination': 'local_outbox', 'files': paths, 'remote': 'setup_required'}
         if self.config.get('wps', {}).get('enabled'):
             from .wps_writer import WPSBrowserWriter
-            result.update(WPSBrowserWriter(self).run_ready(rows))
+            from .wps_browser import configured_wps_target
+            _, title = configured_wps_target(self.config)
+            result.update(WPSBrowserWriter(self, target_title=title).run_ready(rows))
         return result
 
     def status(self):

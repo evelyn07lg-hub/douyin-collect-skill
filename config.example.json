@@ -25,11 +25,12 @@
   "wps": {
     "url": "",
     "enabled": false,
-    "minimum_loaded_pages": 180,
+    "minimum_loaded_pages": 1,
     "preserve_existing_content_and_format": true,
     "append_by_account_section": true,
     "update_existing_entries": false,
-    "append_new_entries_only": true
+    "append_new_entries_only": true,
+    "title": ""
   },
   "browser_budgets": {
     "max_scrolls": 4,

@@ -38,7 +38,9 @@ def preflight():
     from douyin_viral_collector.media import model_is_ready,ffmpeg_executable
     service=Service(Path(__file__).resolve().parents[1]/'config.json')
     try:
-        WPSBrowserWriter(service)
+        from douyin_viral_collector.wps_browser import configured_wps_target
+        _, title = configured_wps_target(service.config)
+        WPSBrowserWriter(service, target_title=title)
         model=model_is_ready(service.path.parent/service.config['model'])
         if not model:raise RuntimeError('local model incomplete')
         report={'ok':True,'mode':'preflight_only','document_modified':False,'writer_guard_passed':True,

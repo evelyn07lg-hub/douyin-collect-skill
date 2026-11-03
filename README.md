@@ -1,16 +1,81 @@
-# Collect 抖音口播采集与金山追加
+# Collect：抖音口播与图文采集 Skill
 
-当前状态：**testing**。已启用 Windows 每两天一次的任务，首次执行为 **2026年11月4日09:00（北京时间）**。三个账号的独立副本追加、原格式保护、正常授权媒体保存及本地转写已验证；尚未完成首条真实新增稿的正式定时写入和至少24小时观察，不能标记 production_ready。
+使用已登录的 Edge 浏览器监测自行配置的抖音账号，将点赞严格大于阈值的作品转成口播稿或图文 OCR，并追加到自己的金山共享文档。也支持本地素材导入。阈值默认 500，每两天更新一次是可选配置。
 
-## 当前会做什么
+项目处于 **testing**，不是开箱即用的生产服务。新安装默认关闭真实监控、金山写入和定时任务；每位使用者需要独立完成账号核验、登录、文档备份和副本验证。仓库不提供任何人的共享文档、账号、登录态或素材。
 
-监测示例账号3、示例账号2、示例账号1。使用另一个账号登录的专用 Edge 浏览器查看公开作品，不要求三个目标分别 OAuth 授权。身份使用已核实主页 sec_uid，不依靠昵称搜索结果猜测；OAuth open_id 是另一种标识，不能混用。
+## 安装
 
-只处理点赞**严格大于500**的作品。以金山文档中各账号最后收录日期为增量基线，优先追加尚未收录的最新达标作品，并复查已观察到低于阈值、后来跨过阈值的旧作品。不会批量重新导入全部旧作品。文档内已存在的10月22日样本已标记 already_present，不重复追加或替换。
+需要 Windows、Microsoft Edge、Python 3.10+。
 
-正式文档现有文字、格式、统计数字全部保留。新稿只追加在对应账号分区末尾，不删除、不重排、不更新旧记录。目标为 https://www.kdocs.cn/l/example-document 。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
+.\.venv\Scripts\python.exe -m pip install -e ".[browser,media]"
+.\.venv\Scripts\python.exe .\scripts\download-model.py
+.\.venv\Scripts\collect.exe test
+```
 
-## 新稿排版
+安装脚本仅在 `config.json` 不存在时复制 `config.example.json`，保留已有配置。`py` 不可用时可用 `-PythonExecutable` 指定 Python 完整路径。媒体组件使用本地 FFmpeg、Whisper 和 OCR；模型下载支持断点续传及 SHA256 校验。默认不调用付费转写或 LLM 服务。
+
+## 填入自己的账号和共享文档
+
+编辑项目根目录的 **`config.json`**，不要把真实信息写到 `config.example.json`。该本机文件已被 Git 忽略。
+
+1. 将 `wps.url` 填为自己有编辑权限的金山共享文档 HTTPS 链接。
+2. 将 `wps.title` 填为该文档的准确标题，用于防止误入同名或其他文档。
+3. 在 `public_profiles` 填写目标账号；昵称和主页身份须在真实页面核对，不能根据链接顺序猜测。文档中对应的账号分区标题应各自唯一。
+4. 浏览器采集需要将 `mode` 改为 `browser`；先保留 `wps.enabled: false`，完成下方验证再启用。
+
+配置结构示意如下，尖括号内容须替换为自己的信息：
+
+```json
+{
+  "mode": "browser",
+  "public_profiles": [
+    {
+      "name": "账号一",
+      "sec_uid": "<自己的目标账号主页 /user/ 后的标识>",
+      "url": "<该账号完整主页链接>",
+      "name_verified": false
+    }
+  ],
+  "wps": {
+    "url": "<自己的金山共享文档链接>",
+    "title": "<自己的文档准确标题>",
+    "enabled": false,
+    "minimum_loaded_pages": 1,
+    "preserve_existing_content_and_format": true,
+    "append_by_account_section": true,
+    "update_existing_entries": false,
+    "append_new_entries_only": true
+  }
+}
+```
+
+上面只是部分字段，保留 `config.example.json` 中其余字段。核对账号页面后再将对应 `name_verified` 设为 `true`。浏览器模式使用 `public_profiles`，无需填写官方 OAuth 的 `accounts`；`sec_uid` 不能与官方 `open_id` 混用。`minimum_loaded_pages` 是加载页数下限，按自己的文档设置，不代表已经完整备份。
+
+登录入口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\browser-probe.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\wps-login.ps1
+.\.venv\Scripts\collect.exe status
+.\.venv\Scripts\collect.exe doctor
+```
+
+在弹出的 Edge 中自行登录、处理验证码。不要提供密码或 Token，不分享 `data/browser-profile`。金山登录检查只核验目标与权限，不输入测试文字；“可评论”不等于可编辑。未配置链接或标题时拒绝核验，不会回退到其他人的文档。
+
+## 写入前验证
+
+正式文档已有文字、格式和统计数字全部保留。新稿只追加到对应账号分区末尾，不覆盖、不重排旧稿。
+
+启用写入前必须下载原格式 DOCX 备份，并在独立副本用实际适配器验证各账号分区的长文追加、全文完整和旧格式保护。验证证明保存在本机 `data/wps-inspection/production-readiness.json`，不随仓库分发；必须匹配自己的正式文档和当前写入模块。完成核验并明确确认后才启用 `wps.enabled`，不能复制他人的证明或仅手改开关绕过。
+
+每次正式追加前后下载原格式文件，逐段核对新增全文和所有旧段落、样式、字体及页面设置。写入模块或模板修改会使证明失效，需要重新在副本验证。当前适配器针对金山文字文档，其他文档类型、页面布局及权限需要实际核验；不保证只填链接即可适用于任意共享文档。
+
+增量基线使用各账号已收录日期；后续跨过点赞阈值的已观察作品仍可处理。旧稿由本地状态及完整正文核验去重，不修改旧统计。疑似重复进入 `duplicate_review`，未知写入结果进入 `uncertain`，不自动重复写。
+
+## 归档格式
 
 ```text
 2026年11月3日，点赞501 评论7 收藏20 分享3；
@@ -21,112 +86,59 @@
 第二段完整正文……
 ```
 
-日期使用作品发布日期，统计值取详情页当次显示。缩写原样保留，缺失写“待获取”，绝不填假0。正文合并ASR碎行，每段后只空一行，不文学改写或扩写。不把账号、链接、采集时间、识别说明、校对说明或归档标识放进正文；这些信息存于本地数据库和旁路元数据。
+日期为作品发布日期，统计取当次详情页显示。缺失写“待获取”，不填假 0；“万”等缩写原样保留。正文合并识别碎行，每段只空一行，不改写或扩写。账号、来源链接、采集时间、识别状态及去重标识放在本地旁路元数据中，不放入共享文档正文。
 
-## 自动执行的条件
-
-电脑需要开机且当前 Windows 用户保持登录；关闭 Codex 不影响任务。关机、休眠或注销期间无法执行，恢复可用后由 StartWhenAvailable 补跑。运行时使用专用 Edge 配置，请勿同时打开 browser-probe 或 wps-login 占用同一配置。
-
-Windows任务名：`DouyinViralCollect`。默认每两天北京时间09:00，普通用户权限运行，不要求管理员。任务直接启动 `.venv/Scripts/python.exe scripts/scheduled-run.py`，不依赖后台Agent或n8n。
-
-浏览器登录过期、验证码、限流或异常跳转会暂停并记录，不绕过。仅保存页面正常请求、已授权可访问的音视频，使用标准HTTP字节范围读取；不调用私有接口、不生成平台签名、不处理DRM、不在403后换身份绕过。保存后校验音轨、完整性及与当前作品播放器的时长一致。用户提供的本地原文件优先。无法取得合法素材则 waiting_media，不能编造口播。
-
-目前自动取音轨针对视频。图文使用本人提供或有权访问的本地图片做顺序OCR；尚无可靠图片源时等待，不把发布描述冒充图片内全部文字。
-
-## 文档安全与已做验证
-
-已从金山正常下载入口备份原格式DOCX。正式文档与最初备份的SHA256完全一致，原有文字、段落属性、样式、字体和页面设置未改动。
-
-另存的私有独立测试副本为“Collect追加验证副本20261102”。在三个账号分区均用实际适配器验证了长中文分段追加，下载前后文件核验新增全文完整、所有旧段落及格式保留。该副本内有测试标记，正式文档没有测试内容。
-
-每次正式追加前重新下载原格式备份，严格核对账号标题唯一性；写后再下载并逐段比较，只允许在目标分区边界增加新段落。旧字、旧格式、页设置或样式发生变化，或新正文不完整，就不能认定成功。
-
-写入前把尝试持久记录为writing，成功全文核验后才更新archived。崩溃或结果不确定为uncertain，禁止盲目重复追加；后续只尝试核验远端是否已含完整同一稿且原文安全。不能可靠确认则人工核验。相同日期且正文疑似已存在时进入duplicate_review，不冒险再写，也不因此覆盖旧稿。
-
-写入模块、排版模板或完整性核验代码变化会使验证证明失效，必须重新在副本验证；不能只手改wps.enabled绕过。
+用户提供的本地素材优先；正常授权播放器音轨可自动保存并检查完整性及作品时长。不能取得素材则 `waiting_media`，不把发布描述冒充逐字稿或图片全文。图文依本地图片顺序 OCR。机器识别可能存在同音字、人名和数字误差，内部保留 `machine_unreviewed` 状态。
 
 ## 常用命令
 
-在本项目目录打开PowerShell：
-
 ```powershell
-.\.venv\Scripts\collect.exe status
-.\.venv\Scripts\collect.exe doctor
-.\.venv\Scripts\collect.exe logs
-.\.venv\Scripts\collect.exe videos
 .\.venv\Scripts\collect.exe check
 .\.venv\Scripts\collect.exe process --retry
 .\.venv\Scripts\collect.exe archive
+.\.venv\Scripts\collect.exe run
+.\.venv\Scripts\collect.exe videos
+.\.venv\Scripts\collect.exe logs
 .\.venv\Scripts\collect.exe backup
 ```
 
-`run` 执行监测、转写、归档整轮；正式开关启用后 archive/run 会追加真实新稿，不能把它们当成纯预览。`browser-check --max-scrolls 4 --max-details 30` 可控制扫描预算。`backfill`/`browser-backfill`扫描历史，但当前增量策略仍会排除不应补录的旧稿。`browser-export`仅导出发布描述到data/publishing-copy，不含逐字稿/图内OCR，不标记远端成功。
+`run` 执行监测、识别和归档整轮。启用正式写入后，`archive` 和 `run` 会操作真实文档，不能当作预览。`ok=true` 仅表示命令完成，需查看 `remote`、`monitor` 和每条处理状态；本地文件不是金山写入成功。
 
-所有业务结果输出JSON。ok=true仅表示命令完成，必须查看remote、monitor、各条status；本地文件不等于金山写入成功。服务核心为Service.run，未来HTTP/n8n复用相同逻辑。
+`browser-check --max-scrolls 4 --max-details 30` 控制扫描预算；`backfill` 和 `browser-backfill` 用于历史扫描，仍遵守增量策略。`browser-export` 仅导出发布描述，不含口播或图内全文，也不标记远端成功。
+
+本地素材导入 JSON 数组支持 `account_id`、`id`、`likes`、`title`、`description`、`published_at`、`url`、`type`（video/image）及 `media`（本地路径数组）。浏览器账号 ID 为 `douyin-public:` 加 `sec_uid`。素材与作品需显式映射，不根据相似文件名自动猜测；多图按数组顺序处理。
+
+登录过期、验证码、限流或异常跳转会暂停并记录。不调用私有接口、不生成平台签名、不绕过 DRM 或访问限制。官方 OAuth 是可选路径，需要各账号授权与相应开放平台权限；本项目不将普通作品列表接口视为下载接口。
+
+## 可选定时任务
+
+完成自己的文档验证后，可安装每两天北京时间 09:00 执行的任务：
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-task.ps1 -Days 2 -At '09:00' -Enable
 Get-ScheduledTask -TaskName DouyinViralCollect
 Get-ScheduledTaskInfo -TaskName DouyinViralCollect
 Disable-ScheduledTask -TaskName DouyinViralCollect
 Enable-ScheduledTask -TaskName DouyinViralCollect
 ```
 
-暂停后恢复前先 doctor，确认代码证明有效、登录和未决写入已核验，不强行重试uncertain条目。更改频率用 `scripts/install-task.ps1 -Days 2 -At '09:00' -Enable`，会保留已登记的同频率首次时间。未带Enable默认注册为禁用状态，避免未验收就写正式文档。卸载用scripts/uninstall-task.ps1。
+不带 `-Enable` 时注册为禁用状态。任务首次时间以安装脚本输出为准；同频率重装保留已登记首次时间。电脑须开机、当前 Windows 用户保持登录，关闭开发工具不影响独立 worker。关机、休眠或注销期间不能执行，恢复后补跑。执行时不要用登录脚本占用同一浏览器配置。卸载用 `scripts/uninstall-task.ps1`。
 
-## 日志和文件
+真实执行结果在 `data/scheduler/last-run.json`；`preflight.json` 只是只读预检，不代表已更新文档。完成自己的真实采集与识别、文档副本验证、首条真实定时追加、关闭开发工具后的整轮运行及至少 24 小时观察前，状态保持 `setup_required` 或 `testing`。
 
-- `data/scheduler/last-run.json`：真实定时执行结果；没有该文件说明正式整轮尚未执行。preflight.json只是只读预检，不能当作已更新文档。
-- `data/collect.sqlite3`：账号、作品、点赞、处理状态、基线、错误及WPS写入日志。
-- `data/transcripts/<标识>/raw.txt`、cleaned.txt、recognition.json：原始识别、整理稿、时间戳与证据。
-- `data/outbox/*.md`：简洁排版的本地稿，metadata.json保存旁路标识；revisions保留旧版本。
-- `data/wps-backups/`：原格式备份；`data/wps-write-evidence/`：各次追加前后备份及核验结果。
-- `data/wps-inspection/production-readiness.json`：副本验证证明；名字并不表示已经production_ready。
+## 本地文件、备份与版本管理
 
-机器识别可能有同音字、人名、数值误差，内部保持machine_unreviewed。原文完整保留，OpenCC只作繁简规范化，日常不用LLM。可选字幕辅助工具scripts/extract-subtitles.py只作本地OCR证据，抽样不等于完整逐字听校，字幕区域需按视频实际位置核对；不在定时流程中默认启用。
+- `config.json`：自己的账号、共享文档和开关。
+- `data/collect.sqlite3`：作品、状态、错误和写入日志。
+- `data/transcripts/`：原识别文本、整理稿及时间戳。
+- `data/outbox/`：本地待归档稿和旁路元数据。
+- `data/wps-backups/`、`data/wps-write-evidence/`：原格式备份和追加核验证据。
+- `models/`、`原始素材/`：本地模型与素材。
 
-## 登录失效与素材映射
+这些内容和登录会话均不纳入 Git。公开分享前检查暂存文件、差异和完整提交历史；不要把真实链接写入 README、测试、示例或提交说明。
 
-抖音登录：运行scripts/browser-probe.ps1，在弹出的Edge自行登录并按提示回车。金山登录：运行scripts/wps-login.ps1，自行登录有编辑权限的账号后回车。密码、验证码、Token不发送到聊天；浏览器会话文件不分享。
+更新前暂停任务，备份 `config.json` 和整个 `data`，再更新代码、依赖并运行测试与 `doctor`。写入代码改变时副本复验后再恢复任务。不要用 `git clean` 清理本地数据。数据库通过 SQLite 在线备份，恢复前停止 worker 并核对远端未决写入，不能混用旧 WAL。
 
-本地素材放在原始素材文件夹，使用作品ID/链接与本地文件显式映射。导入JSON数组字段为account_id（浏览器模式使用douyin-public:加sec_uid）、id、likes、title、description、published_at、url、type（video/image）、media（本地路径数组）。多图按数组顺序处理。CSV单文件media可为字符串；多图建议JSON。不会按相似文件名或发布时间自动猜测；相对路径按项目配置目录管理。
+GitHub 只记录代码版本，不自动同步私人配置、更新文档或部署运行环境。可用 `git status`、`git diff`、`git log --oneline` 查看修改；常规更新使用普通 `git push`。`scripts/github-publish.ps1` 可从当前官方 GitHub CLI 登录账号推断所有者，新仓库默认私有，已有仓库沿用原可见性且检查远程地址，不自动公开。
 
-配置为config.json，数据在data，不放临时目录。accounts字段仅供可选官方OAuth路径；当前浏览器模式使用public_profiles，不需填空open_id。官方video.list/video.data仍需申请及每个账号授权，本项目未验证这些真实凭证，不把普通作品列表接口当下载接口。
-
-## 安装和更新
-
-新电脑建议从python.org安装Python3.10或更高版本。当前项目虚拟环境的基础解释器来自本机Codex附带运行时；关闭Codex不影响，但长期维护建议改用独立Python，更新基础解释器前先备份并重建环境。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
-.\.venv\Scripts\python.exe -m pip install -e ".[browser,media]"
-.\.venv\Scripts\python.exe .\scripts\download-model.py
-.\.venv\Scripts\collect.exe test
-.\.venv\Scripts\collect.exe doctor
-```
-
-`py`不可用时安装脚本支持-PythonExecutable完整路径。media依赖含FFmpeg组件，无须管理员或系统PATH；优先系统FFmpeg，否则使用imageio-ffmpeg。Whisper small模型约461MiB，固定下载提交并SHA256校验，支持标准HTTP Range断点续传。只读本地模型，本机CPU int8最多4线程。
-
-更新步骤：暂停任务，备份config.json和整个data，再更新代码与依赖、跑test/doctor，在副本复核发生变化的写入代码，最后恢复任务。模型、原始素材、登录态和数据库不提交Git，不硬编码密钥。
-
-每日执行run时进行SQLite在线备份，副本在data/backups，不自动删除旧备份。恢复先暂停任务、关闭所有collect连接，备份整个data；把有效备份复制为collect.sqlite3，旧-wal和-shm移到独立备份目录，不混用旧WAL。恢复旧库后先核对远端与写入日志，不直接重试未决写入。缓存、素材、配置和WPS备份也需保留。
-
-数据库schema版本1；后续版本变更需编写并测试迁移，不能把未知版本直接当兼容。迁移到其他电脑/云端需重新验证浏览器登录、GUI执行条件和文档保护，不复制会话到其他用户，不直接暴露HTTP公网。API和n8n默认未启用，见N8N_INTEGRATION.md。
-
-## 验收与费用
-
-- [x] 三个目标主页身份核对、公开作品和点赞真实读取。
-- [x] 原始样本本地完整转写；一条正常授权播放器音轨保存及完整本地转写。
-- [x] 独立测试副本三个账号分区追加、全文及原格式保护。
-- [x] 每两天09:00Windows任务注册启用；Windows任务计划程序只读预检独立执行成功。
-- [x] 失败、丢字、旧格式变化、未知写入结果及不重复追加等离线测试。
-- [ ] 首条真实新增稿正式定时写入并核验。
-- [ ] 关闭Codex后的实际整轮运行观察。
-- [ ] 连续至少24小时观察，无重复归档和重大异常。
-
-未全部满足前保持testing，不能称为production_ready。默认没有固定月费、LLM Token费或转写API费用；主要消耗本地电力、磁盘和网络下载。任何付费接口、云服务或订阅须先明确确认，本项目没有开通这些服务。
-
-## GitHub版本记录
-
-GitHub只保存程序、collect Skill、测试、安装脚本和说明。当前机器的config.json、配置备份、data、登录状态、原始素材、模型、转写稿和本地验收记录均不纳入Git。首次克隆后安装脚本仅在config.json不存在时复制config.example.json；示例默认关闭真实监控、文档写入和调度，不能直接替代本机已验证配置。
-
-更新前先暂停任务并备份config.json及data；不要用git clean清除本地数据，不要强制覆盖配置。写入代码变更后需副本复验，配置及文档保护验证仍按本说明执行。常用版本命令：git status查看变化，git log --oneline查看历史，git diff查看具体修改；上传时只提交代码，核对不含素材/登录数据后再推送。GitHub同步是版本备份，不会自动更改文档、部署更新或产生付费AI调用。
+可选 HTTP 与 n8n 集成见 [N8N_INTEGRATION.md](N8N_INTEGRATION.md)。API 默认关闭，只绑定本机地址；迁移到其他电脑、云端或其他文档布局需重新验证，不复制登录会话给其他人。
