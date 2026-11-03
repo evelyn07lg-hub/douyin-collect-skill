@@ -25,3 +25,5 @@ TEST_RESULTS.md
 *.m4a
 *.wav
 *.mp3
+
+.tools/
