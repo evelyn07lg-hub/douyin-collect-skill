@@ -1,0 +1,48 @@
+{
+  "mode": "import",
+  "data_dir": "data",
+  "threshold": 500,
+  "interval_minutes": 2880,
+  "model": "models/faster-whisper-small",
+  "accounts": [
+    {
+      "name": "账号一",
+      "id": "",
+      "token_env": "DOUYIN_ACCOUNT_1"
+    },
+    {
+      "name": "账号二",
+      "id": "",
+      "token_env": "DOUYIN_ACCOUNT_2"
+    },
+    {
+      "name": "账号三",
+      "id": "",
+      "token_env": "DOUYIN_ACCOUNT_3"
+    }
+  ],
+  "public_profiles": [],
+  "wps": {
+    "url": "",
+    "enabled": false,
+    "minimum_loaded_pages": 180,
+    "preserve_existing_content_and_format": true,
+    "append_by_account_section": true,
+    "update_existing_entries": false,
+    "append_new_entries_only": true
+  },
+  "browser_budgets": {
+    "max_scrolls": 4,
+    "max_details": 30
+  },
+  "media_sources": {
+    "authorized_player_download": false
+  },
+  "schedule": {
+    "every_days": 2,
+    "time": "09:00",
+    "timezone": "Asia/Shanghai",
+    "enabled": false,
+    "state": "setup_required"
+  }
+}

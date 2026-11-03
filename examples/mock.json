@@ -1,0 +1,5 @@
+[
+  {"account_id":"mock-daily","id":"499","title":"阈值以下","likes":499,"type":"video"},
+  {"account_id":"mock-effort","id":"500","title":"阈值边界","likes":500,"type":"video"},
+  {"account_id":"mock-lowhp","id":"501","title":"等待原视频","likes":501,"type":"video"}
+]

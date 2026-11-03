@@ -1,0 +1,2 @@
+# Preserve exact file bytes used by the WPS writer verification fingerprints.
+* -text

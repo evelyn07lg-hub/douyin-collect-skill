@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.egg-info/
+data/
+.env
+config.local.json
+config.before-browser.json
+*.log
+
+config.before-*.json
+
+models/
+原始素材/
+
+# Machine-specific configuration and validation records
+config.json
+TEST_RESULTS.md
+.env.*
+!.env.example
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.mp4
+*.mov
+*.m4a
+*.wav
+*.mp3
