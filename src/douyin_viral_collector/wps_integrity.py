@@ -10,6 +10,28 @@ NS={'w':'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 W='{'+NS['w']+'}'
 
 
+
+def merge_identical_text_runs(paragraph):
+    """Ignore editor-only run splitting; preserve exact text and character properties."""
+    previous = None
+    previous_key = None
+    for child in list(paragraph):
+        parts = list(child)
+        tags = [part.tag for part in parts]
+        if child.tag != W+'r' or tags not in ([W+'t'], [W+'rPr', W+'t']):
+            previous = previous_key = None
+            continue
+        text = parts[-1]
+        properties = ET.tostring(parts[0]) if len(parts) == 2 else None
+        key = (tuple(sorted(child.attrib.items())), properties,
+               tuple(sorted(text.attrib.items())), child.text, child.tail, text.tail)
+        if previous is not None and key == previous_key:
+            previous[-1].text = (previous[-1].text or '') + (text.text or '')
+            paragraph.remove(child)
+        else:
+            previous, previous_key = child, key
+
+
 def snapshot(path):
     path=Path(path)
     with zipfile.ZipFile(path) as package:
@@ -26,6 +48,7 @@ def snapshot(path):
                 for child in list(parent):
                     if child.tag in (W+'bookmarkStart',W+'bookmarkEnd') and child.get(W+'id') in ignored:
                         parent.remove(child)
+            merge_identical_text_runs(node)
             canonical.append(ET.tostring(node))
         protected={name:package.read(name) for name in package.namelist() if name in ('word/styles.xml','word/numbering.xml')
             or name.startswith(('word/theme/','word/media/','word/header','word/footer'))}

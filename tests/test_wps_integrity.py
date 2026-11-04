@@ -42,6 +42,43 @@ class WPSIntegrityTests(unittest.TestCase):
         with self.assertRaises(ValueError):verify_section_append(self.before,after,self.lines,'甲',['甲','乙','丙'])
 
 
+    def split_old_run(self, path, change_format=False, change_text=False):
+        with zipfile.ZipFile(path) as source:
+            files = {name: source.read(name) for name in source.namelist()}
+        document = ET.fromstring(files['word/document.xml'])
+        paragraph = document.find('w:body', NS).findall('w:p', NS)[1]
+        original = paragraph.find('w:r', NS)
+        trailing = copy.deepcopy(original)
+        original.find('w:t', NS).text = '旧'
+        trailing.find('w:t', NS).text = '乙' if change_text else '甲'
+        if change_format:
+            trailing.find('w:rPr/w:rFonts', NS).set(W+'eastAsia', '黑体')
+        paragraph.append(trailing)
+        files['word/document.xml'] = ET.tostring(document)
+        with zipfile.ZipFile(path, 'w') as target:
+            for name, content in files.items(): target.writestr(name, content)
+        return snapshot(path)
+
+    def test_equal_character_format_survives_editor_run_splitting(self):
+        path = self.root/'after.docx'
+        fixture(path,self.old[:2]+self.lines+self.old[2:])
+        after = self.split_old_run(path)
+        self.assertTrue(verify_section_append(self.before,after,self.lines,'甲',['甲','乙','丙'])['existing_format_preserved'])
+
+    def test_run_merge_does_not_hide_character_font_change(self):
+        path = self.root/'after.docx'
+        fixture(path,self.old[:2]+self.lines+self.old[2:])
+        with self.assertRaises(ValueError):
+            verify_section_append(self.before,self.split_old_run(path,True),self.lines,'甲',['甲','乙','丙'])
+
+    def test_run_splitting_does_not_hide_old_text_change(self):
+        path = self.root/'after.docx'
+        fixture(path,self.old[:2]+self.lines+self.old[2:])
+        after = self.split_old_run(path,change_text=True)
+        with self.assertRaises(ValueError):
+            verify_section_append(self.before,after,self.lines,'甲',['甲','乙','丙'])
+
+
 class WPSJournalTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
