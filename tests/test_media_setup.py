@@ -53,3 +53,49 @@ class PCMAudioTests(unittest.TestCase):
                 audio.writeframes(struct.pack('<hhh', -32768, 0, 16384))
             samples = read_pcm_audio(p)
             self.assertEqual(samples.tolist(), [-1.0, 0.0, 0.5])
+
+
+class MediaFileReadinessTests(unittest.TestCase):
+    def test_partial_files_and_sidecars_are_not_recognized(self):
+        import hashlib
+        from douyin_viral_collector.media import extract
+        work = {'account_id': 'example-account', 'id': 'example-work', 'type': 'video'}
+        stem = hashlib.sha256(b'example-account:example-work').hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'media').mkdir()
+            for suffix in ('.download', '.part', '.tmp', '.json'):
+                (root / 'media' / (stem + suffix)).write_bytes(b'incomplete')
+            self.assertIsNone(extract(work, root, str(root / 'model')))
+            empty = root / 'media' / (stem + '.mp4')
+            empty.touch()
+            self.assertIsNone(extract(work, root, str(root / 'model')))
+
+    def test_explicit_partial_mapping_waits_for_complete_media(self):
+        from douyin_viral_collector.media import extract
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            partial = root / 'original.mp4.download'
+            partial.write_bytes(b'not-a-complete-video')
+            self.assertIsNone(extract({'media': [str(partial)]}, root, str(root / 'model')))
+
+    def test_complete_image_is_used_without_its_download_and_metadata(self):
+        import hashlib
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from douyin_viral_collector.media import extract
+        work = {'account_id': 'example-account', 'id': 'example-image', 'type': 'image'}
+        stem = hashlib.sha256(b'example-account:example-image').hexdigest()
+        engine = Mock(return_value=([[None, '完整图片正文', 0.99]], None))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'media').mkdir()
+            image = root / 'media' / (stem + '.png')
+            image.write_bytes(b'complete-test-image')
+            for suffix in ('.download', '.json'):
+                (root / 'media' / (stem + suffix)).write_bytes(b'partial-or-metadata')
+            with patch.dict(sys.modules, {'rapidocr_onnxruntime': SimpleNamespace(RapidOCR=lambda: engine)}):
+                result = extract(work, root, str(root / 'model'))
+            self.assertIn('完整图片正文', result['body'])
+            engine.assert_called_once_with(str(image))

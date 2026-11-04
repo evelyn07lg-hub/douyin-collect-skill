@@ -43,11 +43,16 @@ def extract(work, root, model):
     if not media:
         # IDs can contain slashes; use a documented stable safe filename.
         stem = hashlib.sha256((work['account_id'] + ':' + work['id']).encode()).hexdigest()
-        media = sorted(str(p) for p in (root / 'media').glob(stem + '.*'))
+        extensions = ({'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tif', '.tiff'}
+                      if work.get('type') == 'image' else
+                      {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v', '.flv', '.ts',
+                       '.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.opus'})
+        media = sorted(str(p) for p in (root / 'media').glob(stem + '.*')
+                       if p.is_file() and p.suffix.lower() in extensions)
     if not media:
         return None
     paths = [Path(p) if Path(p).is_absolute() else root.parent / p for p in media]
-    if not all(p.is_file() for p in paths):
+    if not all(p.is_file() and p.stat().st_size > 0 and p.suffix.lower() not in ('.download', '.part', '.tmp') for p in paths):
         return None
     vocabulary = work.get('asr_vocabulary', [])
     if not isinstance(vocabulary, list) or any(not isinstance(v, str) for v in vocabulary):
