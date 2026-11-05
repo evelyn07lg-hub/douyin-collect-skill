@@ -1,7 +1,7 @@
 import copy,json,tempfile,unittest,zipfile,xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import Mock,patch
-from douyin_viral_collector.wps_integrity import snapshot,verify_section_append,NS,W
+from douyin_viral_collector.wps_integrity import snapshot,verify_section_append,verify_account_page_breaks,NS,W
 from douyin_viral_collector.wps_writer import WPSBrowserWriter
 from douyin_viral_collector.service import Service
 
@@ -77,6 +77,17 @@ class WPSIntegrityTests(unittest.TestCase):
         after = self.split_old_run(path,change_text=True)
         with self.assertRaises(ValueError):
             verify_section_append(self.before,after,self.lines,'甲',['甲','乙','丙'])
+
+
+    def test_missing_account_page_break_is_rejected(self):
+        with self.assertRaises(ValueError):
+            verify_account_page_breaks(self.before,['甲','乙','丙'])
+
+    def test_each_account_page_break_must_be_explicit(self):
+        data = dict(self.before, page_break_before=[True,False,True,False,True,False])
+        self.assertTrue(verify_account_page_breaks(data,['甲','乙','丙'])['all_account_headings_start_new_page'])
+        data['page_break_before'][2] = False
+        with self.assertRaises(ValueError):verify_account_page_breaks(data,['甲','乙','丙'])
 
 
 class WPSJournalTests(unittest.TestCase):

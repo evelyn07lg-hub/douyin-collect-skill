@@ -34,6 +34,19 @@ class AppendPolicyTests(unittest.TestCase):
     def test_unknown_date_never_qualifies(self):self.assertFalse(self.check(dict(self.work,published_at='unknown')))
 
 
+    def test_explicit_history_approval_is_limited_to_exact_account_and_work(self):
+        self.s.config['append_policy']['approved_historical_works']=[{'account_id':'a','id':'1'}]
+        old=dict(self.work,published_at='2026-10-01')
+        self.assertTrue(self.check(old))
+        self.assertFalse(self.check(dict(old,id='2')))
+        self.assertFalse(self.check(dict(old,account_id='b')))
+        self.assertFalse(self.check(dict(old,likes=500)))
+
+    def test_explicit_history_approval_still_requires_publication_date(self):
+        self.s.config['append_policy']['approved_historical_works']=[{'account_id':'a','id':'1'}]
+        self.assertFalse(self.check(dict(self.work,published_at='unknown')))
+
+
 class AuthorizedSourceTests(unittest.TestCase):
     def response(self,url='https://v11-weba.douyinvod.com/video',status=206):
         response=Mock();response.url=url;response.status=status

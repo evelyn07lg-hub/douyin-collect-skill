@@ -1,4 +1,4 @@
-"""Future-only eligibility: no automatic historical backfill into the existing document."""
+"""Incremental eligibility with explicitly approved historical exceptions."""
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import json
@@ -17,6 +17,9 @@ def eligible(work,store,config):
     try:
         published=datetime.fromisoformat(str(work['published_at']).replace('Z','+00:00'))
         if published.tzinfo:published=published.astimezone(timezone(timedelta(hours=8)))
+        approved={(str(v.get('account_id','')),str(v.get('id',''))) for v in policy.get('approved_historical_works', [])}
+        if (str(work['account_id']),str(work['id'])) in approved:
+            return work['likes']>threshold,'explicit_historical_backfill' if work['likes']>threshold else 'below_threshold'
         recorded=policy.get('recorded_through', {}).get(work['account_id'])
         if recorded and published.date()>=datetime.fromisoformat(recorded).date():
             return work['likes']>threshold,'latest_since_document' if work['likes']>threshold else 'below_threshold'

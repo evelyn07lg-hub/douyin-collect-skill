@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from .storage import Store, lock
-from .media import extract
+from .media import extract, published_copy
 from .wps import LocalArchive
 
 
@@ -97,7 +97,9 @@ class Service:
             args = (row['account_id'], row['id'])
             self.store.execute("UPDATE works SET status='processing',attempts=attempts+1 WHERE account_id=? AND id=?", args)
             try:
-                text = extract(json.loads(row['payload']), self.root, str(self.path.parent / self.config['model']))
+                work = json.loads(row['payload'])
+                text = (published_copy(work) if work.get('content_mode') == 'published_copy'
+                        else extract(work, self.root, str(self.path.parent / self.config['model'])))
                 if text is None:
                     self.store.execute("UPDATE works SET status='waiting_media' WHERE account_id=? AND id=?", args)
                     result['waiting_media'] += 1
@@ -111,7 +113,7 @@ class Service:
                         target = transcript_dir / filename
                         temp = target.with_suffix('.tmp'); temp.write_text(content, encoding='utf-8'); temp.replace(target)
                     payload = json.loads(row['payload'])
-                    payload['recognition_review'] = 'machine_unreviewed'
+                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'machine_unreviewed'
                     payload['recognition_evidence'] = str(transcript_dir / 'recognition.json')
                     self.store.execute("UPDATE works SET status='ready_to_archive',raw=?,body=?,payload=?,error=NULL WHERE account_id=? AND id=?",
                         (text['raw'], text['body'], json.dumps(payload, ensure_ascii=False), *args))

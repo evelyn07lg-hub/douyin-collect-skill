@@ -223,10 +223,12 @@ class BrowserCollector:
             'published_at': published.removeprefix('发布时间：').strip(),
             'expand_remaining': any(remaining.nth(i).is_visible() for i in range(remaining.count()))}
         work = validate_detail(card, evidence)
+        if work['id'] in {str(v) for v in self.config.get('caption_only_work_ids', [])}:
+            work.update(content_mode='published_copy', no_spoken_confirmed=True, video_type='视频文案')
         from .append_policy import eligible
         decision, reason = eligible(work, self.store, self.config)
         work['eligible_for_append'], work['eligibility_reason'] = decision, reason
-        if decision and work['type'] == 'video' and self.config.get('media_sources', {}).get('authorized_player_download'):
+        if decision and work['type'] == 'video' and work.get('content_mode') != 'published_copy' and self.config.get('media_sources', {}).get('authorized_player_download'):
             existing = self.store.rows('SELECT payload FROM works WHERE account_id=? AND id=?', (work['account_id'],work['id']))
             prior_media = json.loads(existing[0]['payload']).get('media', []) if existing else []
             if isinstance(prior_media, str):prior_media = [prior_media]
@@ -251,7 +253,8 @@ class BrowserCollector:
             from .append_policy import ensure_baseline
             ensure_baseline(self.store)
             ignored = {(r['account_id'],r['id']) for r in self.store.rows('SELECT account_id,id,likes FROM append_baseline') if r['likes'] is None or r['likes']>self.config['threshold']}
-            rows = [r for r in rows if r.get('work_status')!='baseline_ignored' or (r['account_id'],r['id']) not in ignored]
+            approved={(str(v.get('account_id','')),str(v.get('id',''))) for v in self.config['append_policy'].get('approved_historical_works', [])}
+            rows = [r for r in rows if r.get('work_status')!='baseline_ignored' or (r['account_id'],r['id']) not in ignored or (r['account_id'],r['id']) in approved]
         fresh = [r for r in rows if not r['detail_checked']]
         old = sorted((r for r in rows if r['detail_checked']),key=lambda r:r['detail_checked'])
         reserved = min(len(old), max(1, limit//3)) if fresh and limit else min(len(old),limit)

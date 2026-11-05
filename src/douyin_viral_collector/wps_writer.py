@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from .service import now
 from .wps import render_entry, marker
-from .wps_integrity import snapshot, sections, verify_section_append
+from .wps_integrity import snapshot, sections, verify_section_append, verify_account_page_breaks
 
 
 def compact(text):
@@ -48,6 +48,9 @@ class WPSBrowserWriter:
         page.goto(self.url,wait_until='domcontentloaded',timeout=60000)
         minimum=int(self.service.config['wps'].get('minimum_loaded_pages',180))
         page.wait_for_function('minimum=>Array.from(document.body.innerText.matchAll(/页面\\s*[:：]\\s*(\\d+)\\s*\\/\\s*(\\d+)/g)).some(m=>Number(m[2])>=minimum)',arg=minimum,timeout=45000)
+        page.wait_for_timeout(4000)
+        page.wait_for_function("!document.body.innerText.includes('文档正在加载中')",timeout=180000)
+        page.wait_for_timeout(3000)
         report=inspect_wps_page(page,expected_title=self.title,expected_url=self.url)
         if not report['target_matches'] or report['login_required']:
             raise RuntimeError('WPS login or target document not verified')
@@ -98,6 +101,8 @@ class WPSBrowserWriter:
         prior=self.store.rows('SELECT * FROM wps_write_jobs WHERE target=? AND account_id=? AND work_id=?',(self.url,row['account_id'],row['id']))
         folder=self.root/'wps-write-evidence'/marker(row['account_id'],row['id']).split(':')[1]/str(time.time_ns())
         before_path=folder/'before.docx';before=self.download(page,before_path)
+        if self.service.config['wps'].get('require_account_page_breaks'):
+            verify_account_page_breaks(before,self.names)
         bounds=sections(before,self.names)[account]
         text_in_section=compact(''.join(before['paragraphs'][bounds['start']+1:bounds['end']]))
         if prior and prior[0]['state'] in ('writing','uncertain'):
@@ -137,6 +142,8 @@ class WPSBrowserWriter:
                 after_path=folder/f'after-{attempt}.docx';after=self.download(page,after_path)
                 try:
                     proof=verify_section_append(before,after,text.splitlines(),account,self.names)
+                    if self.service.config['wps'].get('require_account_page_breaks'):
+                        proof.update(verify_account_page_breaks(after,self.names))
                     self.record(row,'verified',text,before_path,after_path)
                     (folder/'verification.json').write_text(json.dumps(proof,ensure_ascii=False,indent=2),encoding='utf-8')
                     return proof

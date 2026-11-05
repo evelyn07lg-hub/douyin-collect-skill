@@ -57,7 +57,8 @@ def snapshot(path):
             fonts={node.get(W+'name'):ET.tostring(node) for node in ET.fromstring(package.read('word/fontTable.xml'))}
         body=doc.find('w:body',NS)
         layout=ET.tostring(body.find('w:sectPr',NS)) if body.find('w:sectPr',NS) is not None else None
-        return {'paragraphs':[''.join(e.text or '' for e in node.iter(W+'t')) for node in paragraphs],
+        return {'page_break_before':[node.find('w:pPr/w:pageBreakBefore',NS) is not None and node.find('w:pPr/w:pageBreakBefore',NS).get(W+'val','1') not in ('0','false','off') for node in paragraphs],
+            'paragraphs':[''.join(e.text or '' for e in node.iter(W+'t')) for node in paragraphs],
             'canonical':canonical,'protected':protected,'fonts':fonts,'section_layout':layout,
             'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 
@@ -89,3 +90,10 @@ def verify_section_append(before, after, expected_lines, account, account_names)
         raise ValueError('existing font definitions changed')
     return {'account_section_verified':True,'existing_content_preserved':True,'existing_format_preserved':True,
             'new_text_complete':True,'inserted_paragraphs':len(actual),'before_sha256':before['sha256'],'after_sha256':after['sha256']}
+
+def verify_account_page_breaks(data, account_names):
+    bounds = sections(data, account_names)
+    for name, value in bounds.items():
+        if not data.get('page_break_before', [])[value['start']]:
+            raise ValueError('account heading requires explicit page-break-before: ' + name)
+    return {'all_account_headings_start_new_page': True}

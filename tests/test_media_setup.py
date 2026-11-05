@@ -99,3 +99,23 @@ class MediaFileReadinessTests(unittest.TestCase):
                 result = extract(work, root, str(root / 'model'))
             self.assertIn('完整图片正文', result['body'])
             engine.assert_called_once_with(str(image))
+
+
+class PublishedCopyTests(unittest.TestCase):
+    def test_confirmed_no_spoken_work_uses_complete_published_body(self):
+        from douyin_viral_collector.media import published_copy
+        result = published_copy({'title':'标题','description':'标题\n第一段\n-\n第二段',
+                                 'description_complete':True,'no_spoken_confirmed':True})
+        self.assertEqual(result['body'],'第一段\n\n第二段')
+        self.assertEqual(result['source'],'published_description')
+
+    def test_download_failure_does_not_confirm_no_spoken_content(self):
+        from douyin_viral_collector.media import published_copy
+        with self.assertRaises(ValueError):
+            published_copy({'description':'仅发布描述','description_complete':True,
+                            'media_source_status':{'status':'waiting_media'}})
+
+    def test_truncated_description_is_rejected(self):
+        from douyin_viral_collector.media import published_copy
+        with self.assertRaises(ValueError):
+            published_copy({'description':'尚未展开…','no_spoken_confirmed':True})

@@ -30,7 +30,8 @@
     "append_by_account_section": true,
     "update_existing_entries": false,
     "append_new_entries_only": true,
-    "title": ""
+    "title": "",
+    "require_account_page_breaks": true
   },
   "browser_budgets": {
     "max_scrolls": 4,
@@ -45,5 +46,6 @@
     "timezone": "Asia/Shanghai",
     "enabled": false,
     "state": "setup_required"
-  }
+  },
+  "caption_only_work_ids": []
 }

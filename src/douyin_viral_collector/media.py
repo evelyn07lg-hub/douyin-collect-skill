@@ -35,6 +35,23 @@ def model_is_ready(directory):
     return all((directory / name).is_file() for name in ('model.bin', 'config.json', 'tokenizer.json')) and not (directory / 'model.bin.part').exists()
 
 
+
+def published_copy(work):
+    """Use complete publisher text only when absence of spoken content is confirmed."""
+    if not work.get('no_spoken_confirmed') or not work.get('description_complete'):
+        raise ValueError('Complete published copy and confirmed no-spoken status are required')
+    raw = str(work.get('description', '')).strip()
+    if not raw:
+        raise ValueError('Published copy is empty')
+    first, separator, rest = raw.partition('\n')
+    body = rest.strip() if separator and first.strip() == work.get('title', '').strip() else raw
+    body = '\n\n'.join(part.strip() for part in body.split('\n-\n') if part.strip())
+    if not body:
+        body = raw
+    return {'raw': raw, 'body': body, 'source': 'published_description',
+            'no_spoken_confirmed': True, 'human_reviewed': False}
+
+
 def extract(work, root, model):
     """Explicit mapping wins; fallback requires exact account/id filename stem."""
     media = work.get('media', [])
