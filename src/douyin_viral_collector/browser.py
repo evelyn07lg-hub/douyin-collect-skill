@@ -178,10 +178,13 @@ class BrowserCollector:
         return result
 
     def detail(self, page, card):
-        from .media_sources import collect_response, save_visible_audio
+        from .media_sources import collect_response, save_visible_audio, save_visible_media
         sources = {}
         listener = lambda response: collect_response(response, sources)
         page.on('response', listener)
+        def finished(request):
+            if request.url in sources:sources[request.url]['_finished']=True
+        page.on('requestfinished',finished)
         self.open(page, card['url'])
         author = page.locator('[data-e2e="user-info"]').first.locator('a[href*="/user/"]')
         author.first.wait_for(state='attached', timeout=15000)
@@ -232,14 +235,25 @@ class BrowserCollector:
             existing = self.store.rows('SELECT payload FROM works WHERE account_id=? AND id=?', (work['account_id'],work['id']))
             prior_media = json.loads(existing[0]['payload']).get('media', []) if existing else []
             if isinstance(prior_media, str):prior_media = [prior_media]
-            if prior_media and all((Path(p) if Path(p).is_absolute() else self.service.path.parent / p).is_file() for p in prior_media):
-                work['media'] = prior_media
-            else:
+            if prior_media:work['media'] = prior_media
+            if existing:
+                prior_subtitles=json.loads(existing[0]['payload']).get('subtitle_media',[])
+                if prior_subtitles:work['subtitle_media']=prior_subtitles
+            captions_enabled=self.config.get('proofreading',{}).get('video_subtitles',{}).get('enabled',False)
+            from .subtitles import subtitle_video
+            complete_audio=prior_media and all((Path(p) if Path(p).is_absolute() else self.service.path.parent / p).is_file() for p in prior_media)
+            complete_video=subtitle_video(work,self.root) is not None if captions_enabled else True
+            if not (complete_audio and complete_video):
                 durations = page.locator('video').evaluate_all('(ns)=>ns.map(n=>n.duration).filter(n=>Number.isFinite(n)&&n>1)')
-                source = save_visible_audio(page.context, work, sources, durations, self.root)
+                if captions_enabled:
+                    source=save_visible_media(page.context,work,sources,durations,self.root,
+                        allow_network=not self.config.get('media_sources',{}).get('browser_buffer_only',False))
+                else:source=save_visible_audio(page.context,work,sources,durations,self.root)
                 work['media_source_status'] = source
-                if source.get('status') == 'saved':work['media'] = [source['path']]
+                if source.get('status') == 'saved' and source.get('path'):work['media'] = [source['path']]
+                if source.get('subtitle_path'):work['subtitle_media']=[source['subtitle_path']]
         page.remove_listener('response', listener)
+        page.remove_listener('requestfinished',finished)
         save_json(self.root / 'browser-details' / (card['id'] + '.json'), dict(evidence, checked_at=now()))
         return work
 

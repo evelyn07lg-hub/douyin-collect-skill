@@ -159,3 +159,10 @@ GitHub 只记录代码版本，不自动同步私人配置、更新文档或部�
 识别质量不足时，可运行 `python scripts/download-model.py --model large-v3-turbo` 下载更强的本地模型，再将本机 `model` 改为 `models/faster-whisper-large-v3-turbo`；需要额外磁盘空间和推理时间。切换前保留原始转写，先对真实素材复测，不能仅靠模型名称声称误差率下降。
 
 固定英文口头禅可配置 `english_ending` 和 `ending_aliases`：只处理新识别稿末尾的已确认谐音，保留 raw 和改动证据，不追改已有文档结尾。
+
+
+### 作者字幕优先的三方校对
+
+安装媒体与校对依赖 `pip install -e ".[media,proofreading,browser]"`，在本机开启 `proofreading.video_subtitles.enabled`。先保留原始口播转写和词级时间戳，再从完整视频画面提取字幕，以用户确认术语和作者字幕为主要依据，与口播及匹配素材库交叉校对。支持字幕去重、数字原样保留、无字幕片段补齐和 OCR 字形复核；素材库不能随意覆盖正确字幕。`sample_fps`、`roi`、`minimum_coverage`、`max_refinement_cues` 可按画面调整，已核实的字幕误读或术语可记录在本机 `reviewed_ocr_corrections`。
+
+MP4 可能只有音轨，画面不存在时无法读取字幕。浏览器会优先获取正常播放器已请求的完整视频，支持分轨素材的 `subtitle_media` 映射；平台拒绝下载时需用户提供带字幕原视频。字幕不可用为 `waiting_subtitles`，覆盖不足或不对应的三方结果暂停归档；旧的纯听写待归档稿不能绕过该检查。校对不是零错误保证，人名和专业词仍可能需要用户确认；所有原始证据仅保存在本机数据目录。

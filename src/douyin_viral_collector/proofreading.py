@@ -135,10 +135,10 @@ class Proofreader:
         original = result['body']
         output, evidence = [], []
         # Keep ASR fragments together for context; split only at bounded lengths.
-        chunks = re.findall(r'[\s\S]{1,900}(?:[。！？\n]|$)|[\s\S]{1,900}', original)
+        chunks = [original] if result.get('subtitle_primary') else re.findall(r'[\s\S]{1,900}(?:[。！？\n]|$)|[\s\S]{1,900}', original)
         for chunk in chunks:
-            corrected, changes = self.library.correct(chunk) if self.library else (chunk, [])
-            for replacement in self.settings.get('reviewed_replacements', []):
+            corrected, changes = self.library.correct(chunk) if self.library and not result.get('subtitle_primary') else (chunk, [])
+            for replacement in ([] if result.get('subtitle_primary') else self.settings.get('reviewed_replacements', [])):
                 before, after = replacement['before'], replacement['after']
                 if before and before in corrected:
                     if replacement.get('context') and not re.search(replacement['context'], corrected):
@@ -159,18 +159,28 @@ class Proofreader:
             output.append(corrected.strip())
             evidence.append({'corrections': changes})
         cleaned = '\n'.join(output)
+        if result.get('subtitle_primary'):
+            sentences=re.split(r'(?<=[。！？])', cleaned)
+            paragraphs=[];paragraph=''
+            for sentence in sentences:
+                paragraph+=sentence
+                if len(paragraph)>=200:paragraphs.append(paragraph);paragraph=''
+            if paragraph:paragraphs.append(paragraph)
+            cleaned='\n'.join(paragraphs)
+
         ending = self.settings.get('english_ending', '')
         aliases = self.settings.get('ending_aliases', [])
         if ending and aliases:
-            pattern = r'(?:' + '|'.join(re.escape(x) for x in sorted(aliases,key=len,reverse=True)) + r')(?P<suffix>[，,\s]*(?:兄弟们?|朋友们?)?[。.!！?？]?)\s*$'
+            alternatives = '|'.join(re.escape(x) for x in sorted(aliases,key=len,reverse=True))
+            pattern = r'(?P<spoken>(?:' + alternatives + r')(?:[，,\s]*(?:' + alternatives + r'))*)(?P<suffix>[，,\s]*(?:兄弟们?|朋友们?)?[。.!！?？]?)\s*$'
             match = re.search(pattern, cleaned)
             if match:
-                evidence.append({'ending_correction':{'before':match.group(0),'after':ending+match['suffix'],
+                evidence.append({'ending_correction':{'before':match.group(0),'after':'，'.join([ending]*len(re.findall(alternatives,match['spoken'])))+match['suffix'],
                     'method':'configured_spoken_ending','new_transcripts_only':True}})
-                cleaned = cleaned[:match.start()] + ending + match['suffix']
+                cleaned = cleaned[:match.start()] + '，'.join([ending]*len(re.findall(alternatives,match['spoken']))) + match['suffix']
 
         return dict(result, body=cleaned, proofreading={
-            'method':'local_reference_alignment_and_ct_punc',
+            'method':'subtitle_primary_audio_reference_ct_punc' if result.get('subtitle_primary') else 'local_reference_alignment_and_ct_punc',
             'reference_sha256':self.library.sha256 if self.library else None,
             'raw_preserved':True, 'human_reviewed':False,
             'changes':evidence, 'punctuation_enabled':self.punctuator is not None})

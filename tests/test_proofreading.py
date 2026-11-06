@@ -76,6 +76,11 @@ class ProofreadingTests(unittest.TestCase):
         self.assertIn('margin-top:0',result)
         self.assertEqual(result.count('<p '),2)
 
+    def test_repeated_english_ending_preserves_repeat_count(self):
+        p=self.reader();p.settings.update(english_ending='respect',ending_aliases=['瑞思白'])
+        raw='最后说瑞思白瑞思白。'
+        self.assertEqual(p.process({'raw':raw,'body':raw})['body'],'最后说respect，respect。')
+
     def test_missing_configured_reference_does_not_silently_skip(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(RuntimeError):Proofreader({'reference_path':'missing.docx'},root)

@@ -39,7 +39,7 @@ class Service:
                 prior = json.loads(old[0]['payload'])
                 if source in ('official', 'browser'):
                     for field in ('media', 'media_mapping_source', 'asr_vocabulary', 'recognition_review',
-                                  'recognition_evidence', 'caption_assisted'):
+                                  'recognition_evidence', 'caption_assisted', 'subtitle_media', 'subtitle_capture'):
                         if field in prior and field not in row:
                             row[field] = prior[field]
             self.store.execute('''INSERT INTO works(account_id,id,payload,likes,checked_at) VALUES(?,?,?,?,?)
@@ -90,9 +90,9 @@ class Service:
     def process(self, retry=False):
         # Under OS lock, any processing state is from an interrupted previous run.
         self.store.execute("UPDATE works SET status='discovered' WHERE status='processing'")
-        statuses = "'discovered','waiting_media'" + (",'failed'" if retry else '')
+        statuses = "'discovered','waiting_media','waiting_subtitles'" + (",'failed'" if retry else '')
         rows = self.store.rows(f'SELECT * FROM works WHERE likes>? AND status IN ({statuses})', (self.config['threshold'],))
-        result = {'ready': 0, 'waiting_media': 0, 'failed': 0}
+        result = {'ready': 0, 'waiting_media': 0, 'waiting_subtitles': 0, 'failed': 0}
         proofreader = None
         for row in rows:
             args = (row['account_id'], row['id'])
@@ -119,6 +119,19 @@ class Service:
                         if proofreader is None:
                             from .proofreading import Proofreader
                             proofreader = Proofreader(settings, self.path.parent)
+                        captions = settings.get('video_subtitles', {})
+                        if captions.get('enabled'):
+                            from .subtitles import extract_subtitles
+                            from .transcript_fusion import reconcile
+                            subtitles = extract_subtitles(work, self.root, captions)
+                            (raw_dir/'raw-video-subtitles.json').write_text(json.dumps(subtitles,ensure_ascii=False,indent=2),encoding='utf-8')
+                            if subtitles['status'] != 'extracted':
+                                self.store.execute("UPDATE works SET status='waiting_subtitles',error=? WHERE account_id=? AND id=?",(subtitles.get('reason',subtitles['status']),*args))
+                                result['waiting_subtitles'] += 1
+                                continue
+                            text = reconcile(text, subtitles, library=proofreader.library,
+                                             minimum_coverage=float(captions.get('minimum_coverage',.75)),
+                                             ocr_corrections=captions.get('reviewed_ocr_corrections',[]))
                         text = proofreader.process(text)
                     transcript_dir = self.root / 'transcripts' / marker(*args).split(':')[1]
                     transcript_dir.mkdir(parents=True, exist_ok=True)
@@ -128,7 +141,7 @@ class Service:
                         target = transcript_dir / filename
                         temp = target.with_suffix('.tmp'); temp.write_text(content, encoding='utf-8'); temp.replace(target)
                     payload = json.loads(row['payload'])
-                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'reference_assisted_unreviewed' if text.get('proofreading') else 'machine_unreviewed'
+                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'subtitle_assisted_unreviewed' if text.get('subtitle_primary') else 'reference_assisted_unreviewed' if text.get('proofreading') else 'machine_unreviewed'
                     payload['recognition_evidence'] = str(transcript_dir / 'recognition.json')
                     self.store.execute("UPDATE works SET status='ready_to_archive',raw=?,body=?,payload=?,error=NULL WHERE account_id=? AND id=?",
                         (text['raw'], text['body'], json.dumps(payload, ensure_ascii=False), *args))
@@ -145,6 +158,16 @@ class Service:
         names = {a['id']: a['name'] for a in self.config['accounts']}
         names.update({'douyin-public:' + p['sec_uid']: p.get('name', p['sec_uid']) for p in self.config.get('public_profiles', [])})
         rows = self.store.rows("SELECT * FROM works WHERE status='ready_to_archive'")
+        if self.config.get('proofreading', {}).get('video_subtitles', {}).get('enabled'):
+            stale=[]
+            for row in rows:
+                payload=json.loads(row['payload'])
+                if payload.get('type','video') == 'video' and payload.get('content_mode') != 'published_copy' and payload.get('recognition_review') != 'subtitle_assisted_unreviewed':
+                    stale.append(row)
+            for row in stale:
+                self.store.execute("UPDATE works SET status='waiting_subtitles',error='Caption reconciliation required' WHERE account_id=? AND id=?",(row['account_id'],row['id']))
+            if stale:raise RuntimeError('Spoken drafts need video caption reconciliation before archive; run process first')
+
         rows.sort(key=lambda row:(row['account_id'],str(json.loads(row['payload']).get('published_at',''))))
         paths = [writer.stage(row, json.loads(row['payload']), names.get(row['account_id'], row['account_id'])) for row in rows]
         result = {'destination': 'local_outbox', 'files': paths, 'remote': 'setup_required'}

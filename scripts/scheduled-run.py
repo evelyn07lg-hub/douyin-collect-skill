@@ -13,10 +13,11 @@ def main():
         records=result.get('archive',{}).get('results',[])
         record['document_updated']=any(r.get('status')=='archived' for r in records)
         blocked=result.get('monitor',{}).get('monitor') in ('browser_action_required','authorization_required','token_invalid')
-        failed=result.get('process',{}).get('failed',0)>0 or remote in ('needs_review','setup_required') or blocked or bool(result.get('monitor',{}).get('issues'))
+        failed=result.get('process',{}).get('failed',0)>0 or result.get('process',{}).get('waiting_subtitles',0)>0 or remote in ('needs_review','setup_required') or blocked or bool(result.get('monitor',{}).get('issues'))
         record['ok']=not failed
         waiting=result.get('process',{}).get('waiting_media',0)
         record['waiting_media']=waiting
+        record['waiting_subtitles']=result.get('process',{}).get('waiting_subtitles',0)
         record['status']='needs_attention' if failed else ('updated_with_waiting_media' if record['document_updated'] and waiting else 'updated' if record['document_updated'] else 'waiting_media' if waiting else 'no_new_ready_transcripts')
         if failed:service.store.event('scheduled_attention','Scheduled cycle needs review; see data/scheduler/last-run.json')
     except Exception as exc:

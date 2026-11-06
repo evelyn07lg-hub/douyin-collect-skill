@@ -40,6 +40,24 @@ class CollectorTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):self.s.run('run')
             archive.assert_not_called()
 
+    def test_missing_video_subtitles_keeps_raw_and_waits(self):
+        self.add()
+        self.s.config['proofreading']={'enabled':True,'video_subtitles':{'enabled':True}}
+        from unittest.mock import Mock
+        reader=Mock();reader.library=None
+        with patch('douyin_viral_collector.service.extract',return_value={'raw':'完整听写结果','body':'待字幕核对的正文'}), patch('douyin_viral_collector.proofreading.Proofreader',return_value=reader), patch('douyin_viral_collector.subtitles.extract_subtitles',return_value={'status':'video_unavailable','reason':'audio_only','cues':[]}):
+            result=self.s.run('process')
+        self.assertEqual(result['waiting_subtitles'],1)
+        self.assertEqual(self.s.store.rows('SELECT status FROM works')[0]['status'],'waiting_subtitles')
+        self.assertEqual(list((self.s.root/'transcripts').glob('*/raw.txt'))[0].read_text(encoding='utf-8'),'完整听写结果')
+        reader.process.assert_not_called()
+
+    def test_old_audio_only_ready_draft_cannot_bypass_caption_gate(self):
+        self.add();self.s.store.execute("UPDATE works SET status='ready_to_archive',body='旧听写正文'")
+        self.s.config['proofreading']={'video_subtitles':{'enabled':True}}
+        with self.assertRaises(RuntimeError):self.s.run('archive')
+        self.assertEqual(self.s.store.rows('SELECT status FROM works')[0]['status'],'waiting_subtitles')
+
     def test_strict_threshold(self):
         for n in (499, 500, 501): self.add(vid=str(n), likes=n)
         with patch('douyin_viral_collector.service.extract', return_value=None) as extract:

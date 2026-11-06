@@ -57,6 +57,20 @@
     "reviewed_replacements": [],
     "asr_vocabulary": [],
     "english_ending": "",
-    "ending_aliases": []
+    "ending_aliases": [],
+    "video_subtitles": {
+      "enabled": false,
+      "sample_fps": 4,
+      "roi": [
+        0,
+        0.5,
+        1,
+        0.9
+      ],
+      "min_ocr_confidence": 0.8,
+      "minimum_coverage": 0.75,
+      "refine_variants": true,
+      "reviewed_ocr_corrections": []
+    }
   }
 }

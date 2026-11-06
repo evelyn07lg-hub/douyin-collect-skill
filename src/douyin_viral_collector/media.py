@@ -52,7 +52,7 @@ def published_copy(work):
             'no_spoken_confirmed': True, 'human_reviewed': False}
 
 
-def extract(work, root, model):
+def media_paths(work, root):
     """Explicit mapping wins; fallback requires exact account/id filename stem."""
     media = work.get('media', [])
     if isinstance(media, str):
@@ -67,15 +67,22 @@ def extract(work, root, model):
         media = sorted(str(p) for p in (root / 'media').glob(stem + '.*')
                        if p.is_file() and p.suffix.lower() in extensions)
     if not media:
-        return None
+        return []
     paths = [Path(p) if Path(p).is_absolute() else root.parent / p for p in media]
     if not all(p.is_file() and p.stat().st_size > 0 and p.suffix.lower() not in ('.download', '.part', '.tmp') for p in paths):
+        return []
+    return paths
+
+
+def extract(work, root, model):
+    paths = media_paths(work, root)
+    if not paths:
         return None
     vocabulary = work.get('asr_vocabulary', [])
     if not isinstance(vocabulary, list) or any(not isinstance(v, str) for v in vocabulary):
         raise ValueError('asr_vocabulary must be a list of words')
     prompt = '简体中文口语。' + ('相关词汇：' + '、'.join(vocabulary) if vocabulary else '')
-    digest = hashlib.sha256(('recognition-v3:' + model + work.get('type', 'video') + prompt).encode())
+    digest = hashlib.sha256(('recognition-v4-timed-words:' + model + work.get('type', 'video') + prompt).encode())
     manifest = Path(model) / 'download-manifest.json'
     if work.get('type') != 'image' and manifest.is_file():
         digest.update(manifest.read_bytes())
@@ -105,8 +112,10 @@ def extract(work, root, model):
             subprocess.run([ffmpeg_executable(), '-nostdin', '-v', 'error', '-i', str(paths[0]), '-vn',
                             '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], check=True, capture_output=True, timeout=600)
             engine = WhisperModel(model, device='cpu', compute_type='int8', local_files_only=True, cpu_threads=min(4, os.cpu_count() or 1))
-            segments, info = engine.transcribe(read_pcm_audio(wav), language='zh', vad_filter=True, beam_size=5, condition_on_previous_text=True, initial_prompt=prompt)
-            timed_segments = [{'start': s.start, 'end': s.end, 'text': s.text.strip()} for s in segments]
+            segments, info = engine.transcribe(read_pcm_audio(wav), language='zh', vad_filter=True, beam_size=5, condition_on_previous_text=True, initial_prompt=prompt, word_timestamps=True)
+            timed_segments = [{'start': s.start, 'end': s.end, 'text': s.text.strip(),
+                               'words': [{'start': w.start, 'end': w.end, 'word': w.word, 'probability': w.probability}
+                                         for w in (s.words or [])]} for s in segments]
             raw = '\n'.join(s['text'] for s in timed_segments)
             timing = {'duration_seconds': info.duration, 'speech_duration_seconds': info.duration_after_vad,
                       'segments': timed_segments, 'recognizer': 'faster-whisper', 'model': str(model), 'human_reviewed': False}
