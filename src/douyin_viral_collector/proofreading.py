@@ -159,6 +159,16 @@ class Proofreader:
             output.append(corrected.strip())
             evidence.append({'corrections': changes})
         cleaned = '\n'.join(output)
+        ending = self.settings.get('english_ending', '')
+        aliases = self.settings.get('ending_aliases', [])
+        if ending and aliases:
+            pattern = r'(?:' + '|'.join(re.escape(x) for x in sorted(aliases,key=len,reverse=True)) + r')(?P<suffix>[，,\s]*(?:兄弟们?|朋友们?)?[。.!！?？]?)\s*$'
+            match = re.search(pattern, cleaned)
+            if match:
+                evidence.append({'ending_correction':{'before':match.group(0),'after':ending+match['suffix'],
+                    'method':'configured_spoken_ending','new_transcripts_only':True}})
+                cleaned = cleaned[:match.start()] + ending + match['suffix']
+
         return dict(result, body=cleaned, proofreading={
             'method':'local_reference_alignment_and_ct_punc',
             'reference_sha256':self.library.sha256 if self.library else None,

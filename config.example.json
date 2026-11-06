@@ -55,6 +55,8 @@
     "reference_path": "data/reference/library.docx",
     "punctuation_model": "models/ct-punc",
     "reviewed_replacements": [],
-    "asr_vocabulary": []
+    "asr_vocabulary": [],
+    "english_ending": "",
+    "ending_aliases": []
   }
 }

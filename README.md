@@ -152,8 +152,10 @@ GitHub 只记录代码版本，不自动同步私人配置、更新文档或部�
 
 ### 本地文案库校对与连续排版
 
-新稿账号标题使用宋体四号（14pt）并段前分页；其他文字使用宋体五号（10.5pt），单倍行距、段前段后 0，不插空白段或额外分页。写入后从 DOCX 回读检查实际字体、字号及间距。
+新稿账号标题使用宋体四号（14pt）并段前分页；其他文字使用宋体五号（10.5pt），单倍行距，正文段前段后 0；每篇日期首行段前 10.5pt，作品之间留一行，正文内部不插空段或额外分页。写入后从 DOCX 回读检查实际字体、字号及间距。
 
 可安装 `pip install -e ".[proofreading]"` 并在本机配置 `proofreading.enabled`、自己的 `reference_url`、准确的 `reference_title`、`reference_path` 和本地 `punctuation_model`。模型目录须包含 CT-Punc ONNX 的 `model_quant.onnx`、`tokens.json`、`config.yaml`，仅从模型发布者下载并核验。每轮运行只读刷新文案库，先保存完整原始识别，再进行片段匹配、谨慎纠正同音词和本地标点恢复；匹配不到时保留实际说话内容。`reviewed_replacements` 可配置经审阅的词语修正与上下文条件，`asr_vocabulary` 可提示专业词。文案库可能有错误，不能直接覆盖原稿；仍需对疑难处复核，不能承诺零错字。所有原文、修改依据及链接保留在不提交的数据目录与本机配置中。
 
 识别质量不足时，可运行 `python scripts/download-model.py --model large-v3-turbo` 下载更强的本地模型，再将本机 `model` 改为 `models/faster-whisper-large-v3-turbo`；需要额外磁盘空间和推理时间。切换前保留原始转写，先对真实素材复测，不能仅靠模型名称声称误差率下降。
+
+固定英文口头禅可配置 `english_ending` 和 `ending_aliases`：只处理新识别稿末尾的已确认谐音，保留 raw 和改动证据，不追改已有文档结尾。

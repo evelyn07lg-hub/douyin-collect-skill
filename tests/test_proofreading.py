@@ -53,6 +53,29 @@ class ProofreadingTests(unittest.TestCase):
         body='某鱼的事情，我们已经讲过了。respect兄弟！'
         self.assertEqual(p.process({'raw':body,'body':body})['body'],body)
 
+    def test_configured_english_ending_applies_only_to_new_transcript_tail(self):
+        p=self.reader();p.settings.update(english_ending='respect',ending_aliases=['瑞思白'])
+        raw='今天就讲到这里，瑞思白兄弟。'
+        result=p.process({'raw':raw,'body':raw})
+        self.assertEqual(result['body'],'今天就讲到这里，respect兄弟。')
+        self.assertEqual(result['raw'],raw)
+
+    def test_ending_alias_inside_body_is_not_rewritten(self):
+        p=self.reader();p.settings.update(english_ending='respect',ending_aliases=['瑞思白'])
+        raw='刚刚说瑞思白以后我们接着讲别的话题。'
+        self.assertEqual(p.process({'raw':raw,'body':raw})['body'],raw)
+
+    def test_published_existing_ending_is_not_rewritten(self):
+        p=self.reader();p.settings.update(english_ending='respect',ending_aliases=['瑞思白'])
+        text={'raw':'原来的瑞思白。','body':'原来的瑞思白。','source':'published_description'}
+        self.assertEqual(p.process(text),text)
+
+    def test_article_header_has_gap_but_body_has_no_spacer_paragraph(self):
+        result=archive_html(['2026年11月1日，点赞501；','连续的正文。'])
+        self.assertEqual(result.count('margin-top:10.5pt'),1)
+        self.assertIn('margin-top:0',result)
+        self.assertEqual(result.count('<p '),2)
+
     def test_missing_configured_reference_does_not_silently_skip(self):
         with tempfile.TemporaryDirectory() as root:
             with self.assertRaises(RuntimeError):Proofreader({'reference_path':'missing.docx'},root)
