@@ -148,3 +148,12 @@ GitHub 只记录代码版本，不自动同步私人配置、更新文档或部�
 确认没有口播的视频可直接收录完整发布文案：将经核实的作品 ID 填入本机 `caption_only_work_ids`。系统仍核验作者、作品、点赞及描述已展开，类型记为“视频文案”，不做语音识别。无法下载音轨不能作为无口播的判断依据；示例列表默认留空。
 
 用户明确要求补核某些旧作品时，可在本机 `append_policy.approved_historical_works` 逐项记录 `account_id` 和 `id`。仅这些作品允许越过原增量日期和激活基线，仍须核验发布日期、严格超过点赞阈值，并遵守全文去重及文档保护；不自动放开所有历史作品。
+
+
+### 本地文案库校对与连续排版
+
+新稿账号标题使用宋体四号（14pt）并段前分页；其他文字使用宋体五号（10.5pt），单倍行距、段前段后 0，不插空白段或额外分页。写入后从 DOCX 回读检查实际字体、字号及间距。
+
+可安装 `pip install -e ".[proofreading]"` 并在本机配置 `proofreading.enabled`、自己的 `reference_url`、准确的 `reference_title`、`reference_path` 和本地 `punctuation_model`。模型目录须包含 CT-Punc ONNX 的 `model_quant.onnx`、`tokens.json`、`config.yaml`，仅从模型发布者下载并核验。每轮运行只读刷新文案库，先保存完整原始识别，再进行片段匹配、谨慎纠正同音词和本地标点恢复；匹配不到时保留实际说话内容。`reviewed_replacements` 可配置经审阅的词语修正与上下文条件，`asr_vocabulary` 可提示专业词。文案库可能有错误，不能直接覆盖原稿；仍需对疑难处复核，不能承诺零错字。所有原文、修改依据及链接保留在不提交的数据目录与本机配置中。
+
+识别质量不足时，可运行 `python scripts/download-model.py --model large-v3-turbo` 下载更强的本地模型，再将本机 `model` 改为 `models/faster-whisper-large-v3-turbo`；需要额外磁盘空间和推理时间。切换前保留原始转写，先对真实素材复测，不能仅靠模型名称声称误差率下降。

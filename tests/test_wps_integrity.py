@@ -79,6 +79,32 @@ class WPSIntegrityTests(unittest.TestCase):
             verify_section_append(self.before,after,self.lines,'甲',['甲','乙','丙'])
 
 
+    def mark_metadata(self,path,locale=None,font='宋体',actual_run=False):
+        with zipfile.ZipFile(path) as z:files={name:z.read(name) for name in z.namelist()}
+        doc=ET.fromstring(files['word/document.xml']);paragraph=doc.findall('w:body/w:p',NS)[1]
+        parent=paragraph.find('w:r/w:rPr',NS) if actual_run else ET.SubElement(paragraph.find('w:pPr',NS),W+'rPr')
+        if not actual_run:ET.SubElement(parent,W+'rFonts',{W+'eastAsia':font})
+        if locale:ET.SubElement(parent,W+'lang',{W+'eastAsia':locale})
+        files['word/document.xml']=ET.tostring(doc)
+        with zipfile.ZipFile(path,'w') as z:
+            for name,data in files.items():z.writestr(name,data)
+        return snapshot(path)
+
+    def test_paragraph_mark_input_locale_does_not_change_old_text_format(self):
+        before=self.mark_metadata(self.root/'before.docx','zh')
+        path=self.root/'after.docx';fixture(path,self.old[:2]+self.lines+self.old[2:]);after=self.mark_metadata(path)
+        self.assertTrue(verify_section_append(before,after,self.lines,'甲',['甲','乙','丙'])['existing_format_preserved'])
+
+    def test_actual_text_run_language_change_is_still_rejected(self):
+        before=self.mark_metadata(self.root/'before.docx','zh',actual_run=True)
+        path=self.root/'after.docx';fixture(path,self.old[:2]+self.lines+self.old[2:]);after=self.mark_metadata(path,actual_run=True)
+        with self.assertRaises(ValueError):verify_section_append(before,after,self.lines,'甲',['甲','乙','丙'])
+
+    def test_paragraph_mark_font_change_is_still_rejected(self):
+        before=self.mark_metadata(self.root/'before.docx','zh')
+        path=self.root/'after.docx';fixture(path,self.old[:2]+self.lines+self.old[2:]);after=self.mark_metadata(path,font='黑体')
+        with self.assertRaises(ValueError):verify_section_append(before,after,self.lines,'甲',['甲','乙','丙'])
+
     def test_missing_account_page_break_is_rejected(self):
         with self.assertRaises(ValueError):
             verify_account_page_breaks(self.before,['甲','乙','丙'])

@@ -48,6 +48,16 @@ def snapshot(path):
                 for child in list(parent):
                     if child.tag in (W+'bookmarkStart',W+'bookmarkEnd') and child.get(W+'id') in ignored:
                         parent.remove(child)
+            # WPS clears the Chinese input locale on the paragraph-end mark when
+            # Enter creates a following paragraph. It is not a property of text runs.
+            # Retain all fonts/sizes and all actual text-run language properties.
+            mark = node.find('w:pPr/w:rPr', NS)
+            if mark is not None:
+                for language in list(mark):
+                    if language.tag == W+'lang' and language.attrib == {W+'eastAsia':'zh'}:
+                        mark.remove(language)
+                if not len(mark) and not mark.attrib and not (mark.text or '').strip():
+                    node.find('w:pPr', NS).remove(mark)
             merge_identical_text_runs(node)
             canonical.append(ET.tostring(node))
         protected={name:package.read(name) for name in package.namelist() if name in ('word/styles.xml','word/numbering.xml')

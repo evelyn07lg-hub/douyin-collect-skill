@@ -50,7 +50,7 @@ def format_paragraphs(body, target_length=200):
         current += separator + line
     if current:
         paragraphs.append(current)
-    return '\n\n'.join(paragraphs)
+    return '\n'.join(paragraphs)
 
 
 def render_entry(row, work):

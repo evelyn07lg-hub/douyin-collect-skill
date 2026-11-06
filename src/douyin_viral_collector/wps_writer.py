@@ -17,7 +17,7 @@ def compact(text):
 def writer_fingerprint():
     base=Path(__file__).resolve().parent
     digest=hashlib.sha256()
-    for name in ('wps_writer.py','wps_integrity.py','wps.py'):
+    for name in ('wps_writer.py','wps_integrity.py','wps.py','richtext.py'):
         digest.update(name.encode());digest.update((base/name).read_bytes())
     return digest.hexdigest()
 
@@ -133,9 +133,8 @@ class WPSBrowserWriter:
         self.record(row,'writing',text,before_path)
         try:
             page.keyboard.press('Enter');page.wait_for_timeout(600)
-            for i,line in enumerate(text.splitlines()):
-                if i:page.keyboard.press('Enter');page.wait_for_timeout(400)
-                if line:page.keyboard.insert_text(line);page.wait_for_timeout(800)
+            from .richtext import paste_archive
+            paste_archive(page, text.splitlines())
             page.wait_for_timeout(4000)
             error=None
             for attempt in range(3):
@@ -144,6 +143,9 @@ class WPSBrowserWriter:
                     proof=verify_section_append(before,after,text.splitlines(),account,self.names)
                     if self.service.config['wps'].get('require_account_page_breaks'):
                         proof.update(verify_account_page_breaks(after,self.names))
+                    from .richtext import verify_archive_format
+                    inserted = [k for op,i,j,start,end in difflib.SequenceMatcher(a=before['canonical'],b=after['canonical'],autojunk=False).get_opcodes() if op=='insert' for k in range(start,end)]
+                    proof.update(verify_archive_format(after_path, self.names, inserted))
                     self.record(row,'verified',text,before_path,after_path)
                     (folder/'verification.json').write_text(json.dumps(proof,ensure_ascii=False,indent=2),encoding='utf-8')
                     return proof

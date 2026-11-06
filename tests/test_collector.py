@@ -26,6 +26,20 @@ class CollectorTests(unittest.TestCase):
     def add(self, aid='0', vid='x', likes=501):
         return self.s.ingest([{'account_id': aid, 'id': vid, 'likes': likes}], 'mock')
 
+    def test_proofreading_failure_keeps_raw_and_prevents_ready(self):
+        self.add()
+        self.s.config['proofreading']={'enabled':True,'reference_path':'missing.docx'}
+        with patch('douyin_viral_collector.service.extract', return_value={'raw':'原始完整识别','body':'尚未校对的正文'}):
+            self.assertEqual(self.s.run('process')['failed'],1)
+        raw=list((self.s.root/'transcripts').glob('*/raw.txt'))
+        self.assertEqual(raw[0].read_text(encoding='utf-8'),'原始完整识别')
+        self.assertEqual(self.s.store.rows('SELECT status FROM works')[0]['status'],'failed')
+
+    def test_reference_refresh_failure_stops_archive(self):
+        with patch.object(self.s,'monitor',return_value={}), patch('douyin_viral_collector.reference.refresh_reference',side_effect=RuntimeError('not available')), patch.object(self.s,'archive') as archive:
+            with self.assertRaises(RuntimeError):self.s.run('run')
+            archive.assert_not_called()
+
     def test_strict_threshold(self):
         for n in (499, 500, 501): self.add(vid=str(n), likes=n)
         with patch('douyin_viral_collector.service.extract', return_value=None) as extract:

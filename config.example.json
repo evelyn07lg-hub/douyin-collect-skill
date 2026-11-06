@@ -47,5 +47,14 @@
     "enabled": false,
     "state": "setup_required"
   },
-  "caption_only_work_ids": []
+  "caption_only_work_ids": [],
+  "proofreading": {
+    "enabled": false,
+    "reference_url": "",
+    "reference_title": "",
+    "reference_path": "data/reference/library.docx",
+    "punctuation_model": "models/ct-punc",
+    "reviewed_replacements": [],
+    "asr_vocabulary": []
+  }
 }

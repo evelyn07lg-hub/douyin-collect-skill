@@ -93,11 +93,15 @@ class Service:
         statuses = "'discovered','waiting_media'" + (",'failed'" if retry else '')
         rows = self.store.rows(f'SELECT * FROM works WHERE likes>? AND status IN ({statuses})', (self.config['threshold'],))
         result = {'ready': 0, 'waiting_media': 0, 'failed': 0}
+        proofreader = None
         for row in rows:
             args = (row['account_id'], row['id'])
             self.store.execute("UPDATE works SET status='processing',attempts=attempts+1 WHERE account_id=? AND id=?", args)
             try:
                 work = json.loads(row['payload'])
+                vocabulary = self.config.get('proofreading', {}).get('asr_vocabulary', [])
+                if vocabulary:
+                    work['asr_vocabulary'] = list(dict.fromkeys(work.get('asr_vocabulary', []) + vocabulary))
                 text = (published_copy(work) if work.get('content_mode') == 'published_copy'
                         else extract(work, self.root, str(self.path.parent / self.config['model'])))
                 if text is None:
@@ -105,6 +109,17 @@ class Service:
                     result['waiting_media'] += 1
                 else:
                     from .wps import marker
+                    raw_dir = self.root / 'transcripts' / marker(*args).split(':')[1]
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    raw_file = raw_dir / 'raw.txt'
+                    raw_file.write_text(text['raw'], encoding='utf-8')
+                    (raw_dir/'asr-before-proofreading.json').write_text(json.dumps(text,ensure_ascii=False,indent=2),encoding='utf-8')
+                    settings = self.config.get('proofreading', {})
+                    if settings.get('enabled') and work.get('type') != 'image' and text.get('source') != 'published_description':
+                        if proofreader is None:
+                            from .proofreading import Proofreader
+                            proofreader = Proofreader(settings, self.path.parent)
+                        text = proofreader.process(text)
                     transcript_dir = self.root / 'transcripts' / marker(*args).split(':')[1]
                     transcript_dir.mkdir(parents=True, exist_ok=True)
                     for filename, content in [('raw.txt', text['raw']), ('cleaned.txt', text['body']),
@@ -113,7 +128,7 @@ class Service:
                         target = transcript_dir / filename
                         temp = target.with_suffix('.tmp'); temp.write_text(content, encoding='utf-8'); temp.replace(target)
                     payload = json.loads(row['payload'])
-                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'machine_unreviewed'
+                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'reference_assisted_unreviewed' if text.get('proofreading') else 'machine_unreviewed'
                     payload['recognition_evidence'] = str(transcript_dir / 'recognition.json')
                     self.store.execute("UPDATE works SET status='ready_to_archive',raw=?,body=?,payload=?,error=NULL WHERE account_id=? AND id=?",
                         (text['raw'], text['body'], json.dumps(payload, ensure_ascii=False), *args))
@@ -189,7 +204,10 @@ class Service:
                 backup = self.store.get('last_backup', 0)
                 if time.time() - backup > 86400:
                     self.store.backup(); self.store.set('last_backup', time.time())
-                return {'monitor': self.monitor(), 'process': self.process(retry=True), 'archive': self.archive()}
+                monitored = self.monitor()
+                from .reference import refresh_reference
+                reference = refresh_reference(self)
+                return {'monitor': monitored, 'reference': reference, 'process': self.process(retry=True), 'archive': self.archive()}
             if command == 'process': return self.process(**kwargs)
             if command == 'archive': return self.archive()
             if command == 'status': return self.status()

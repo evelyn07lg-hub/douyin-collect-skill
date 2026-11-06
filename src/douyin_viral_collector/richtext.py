@@ -1,0 +1,68 @@
+"""Explicit archive formatting, independent of editor selection inheritance."""
+import html
+import zipfile
+import xml.etree.ElementTree as ET
+from .wps_integrity import NS, W
+
+
+def archive_html(lines, headings=()):
+    headings = set(headings)
+    paragraphs = []
+    for text in lines:
+        if not text.strip():
+            continue
+        heading = text in headings
+        size = '14' if heading else '10.5'
+        style = (f'font-family:宋体;font-size:{size}pt;margin:0;line-height:100%;'
+                 f'text-align:{"center" if heading else "left"};'
+                 + ('page-break-before:always;' if heading else 'page-break-before:auto;'))
+        paragraphs.append(f'<p style="{style}"><span style="font-family:宋体;font-size:{size}pt">{html.escape(text)}</span></p>')
+    return '<html><body>'+''.join(paragraphs)+'</body></html>'
+
+
+def paste_archive(page, lines, headings=(), trim_terminal=True):
+    payload={'html':archive_html(lines, headings),'text':'\n'.join(lines)}
+    handled=page.evaluate("""({html,text})=>{
+        const data=new DataTransfer();data.setData('text/html',html);data.setData('text/plain',text);
+        return !document.activeElement.dispatchEvent(new ClipboardEvent('paste',{
+            clipboardData:data,bubbles:true,cancelable:true}));
+    }""",payload)
+    if not handled:
+        raise RuntimeError('Editor did not accept the standard paste event')
+    page.wait_for_timeout(3000)
+    if trim_terminal:
+        page.keyboard.press('Backspace');page.wait_for_timeout(1000)
+
+
+def verify_archive_format(path, headings, paragraph_indices=None):
+    with zipfile.ZipFile(path) as z:
+        doc = ET.fromstring(z.read('word/document.xml'))
+    paragraphs = doc.findall('w:body/w:p', NS)
+    indices = range(len(paragraphs)) if paragraph_indices is None else paragraph_indices
+    for index in indices:
+        p = paragraphs[index]
+        text = ''.join(e.text or '' for e in p.iter(W+'t'))
+        if not text.strip():
+            # A single terminal document paragraph is allowed; no interior spacers.
+            if index != len(paragraphs)-1:
+                raise ValueError('Unexpected blank paragraph in archive')
+            continue
+        heading = text in headings
+        size = '28' if heading else '21'  # OOXML half-points: 四号14pt, 五号10.5pt
+        page_break = p.find('w:pPr/w:pageBreakBefore',NS)
+        if (page_break is not None and page_break.get(W+'val','1') not in ('0','false','off')) != heading:
+            raise ValueError('Only account headings may force a new page')
+        spacing = p.find('w:pPr/w:spacing',NS)
+        if spacing is None or any(spacing.get(W+k,'0') != '0' for k in ('before','after')):
+            raise ValueError('Unexpected paragraph spacing')
+        if spacing.get(W+'line') != '240' or spacing.get(W+'lineRule','auto') != 'auto':
+            raise ValueError('Expected single line spacing')
+        if any(e.get(W+'type')=='page' for e in p.iter(W+'br')):
+            raise ValueError('Unexpected manual page break')
+        for run in p.findall('w:r',NS):
+            if not ''.join(e.text or '' for e in run.iter(W+'t')):
+                continue
+            fonts=run.find('w:rPr/w:rFonts',NS);sz=run.find('w:rPr/w:sz',NS)
+            if fonts is None or fonts.get(W+'eastAsia')!='宋体' or sz is None or sz.get(W+'val')!=size:
+                raise ValueError('Archive font or size mismatch')
+    return {'songti_14pt_headings_10_5pt_body':True,'no_extra_paragraph_spacing':True}

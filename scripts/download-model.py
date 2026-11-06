@@ -21,9 +21,14 @@ def sha256_file(path):
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    destination = root / 'models/faster-whisper-small'
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--model', choices=['small','large-v3-turbo'], default='small')
+    selected = parser.parse_args().model
+    destination = root / ('models/faster-whisper-' + selected)
     destination.mkdir(parents=True, exist_ok=True)
-    repo = 'Systran/faster-whisper-small'
+    repo = ('Systran/faster-whisper-small' if selected == 'small'
+            else 'mobiuslabsgmbh/faster-whisper-large-v3-turbo')
     revision = fetch_json('https://huggingface.co/api/models/' + repo)['sha']
     files = fetch_json(f'https://huggingface.co/api/models/{repo}/tree/{revision}')
     required = {'model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt', 'vocabulary.json', 'preprocessor_config.json'}
