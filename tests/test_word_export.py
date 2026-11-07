@@ -39,3 +39,12 @@ class WordWorkflowTests(unittest.TestCase):
   with patch.object(self.s,'monitor',return_value={}),patch.object(self.s,'process',return_value={}),patch('douyin_viral_collector.reference.refresh_reference',return_value={}),patch.object(self.s,'archive') as archive:
    result=self.s.run('run')
   archive.assert_not_called();self.assertEqual(result['word']['count'],1);self.assertEqual(self.s.store.rows('SELECT status FROM works')[0]['status'],'exported_local')
+
+ def test_status_reports_real_word_export_without_cloud_setup_blocker(self):
+  self.assertEqual(self.s.status()['readiness'],'local_word_configured')
+  result=export_word(self.s,records=self.records())
+  status=self.s.status();self.assertEqual(status['readiness'],'local_export_verified');self.assertEqual(status['wps'],'optional_disabled');self.assertEqual(status['last_word_export']['count'],5)
+  Path(result['path']).unlink();self.assertEqual(self.s.status()['readiness'],'local_word_configured')
+ def test_publication_dates_respect_timezone_and_timestamp(self):
+  from douyin_viral_collector.word_export import _date
+  self.assertEqual(_date('2026-10-01T20:30:00Z'),'2026年10月2日');self.assertEqual(_date(0),'1970年1月1日');self.assertEqual(_date(None),'发布时间待获取')

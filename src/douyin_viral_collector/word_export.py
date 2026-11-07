@@ -10,11 +10,9 @@ def _font(style,size):
  style.element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'),'宋体')
 
 def _date(value):
- text=str(value or '')
- match=re.match(r'^(\d{4})[-年](\d{1,2})[-月](\d{1,2})',text)
- if not match:return '发布时间待获取'
- y,m,d=map(int,match.groups());datetime(y,m,d)
- return f'{y}年{m}月{d}日'
+ from .wps import publication_date
+ result=publication_date(value)
+ return '发布时间待获取' if result=='日期待获取' else result
 
 def export_word(service,output=None,records=None,title=None,cover=True):
  from docx import Document
@@ -78,4 +76,4 @@ def export_word(service,output=None,records=None,title=None,cover=True):
   if package.testzip() is not None:raise RuntimeError('Word文件校验失败')
  temporary.replace(path)
  summary={'document_generated':True,'path':str(path.resolve()),'count':len(rows),'accounts':names,'pending':pending,'pending_count':len(pending),'cloud_sharing_enabled':bool(config.get('wps',{}).get('enabled')),'source':'provided_records' if explicit else 'local_collection_database','works':[{'account_id':k[0],'id':k[1]} for k in rows]}
- report.write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8');summary['report_path']=str(report.resolve());return summary
+ report.write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8');summary['report_path']=str(report.resolve());service.store.set('last_word_export',{'path':summary['path'],'count':summary['count'],'report_path':summary['report_path']});return summary

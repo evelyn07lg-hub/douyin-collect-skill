@@ -183,7 +183,7 @@ class Service:
         return result
 
     def status(self):
-        return {'readiness': 'testing' if self.config.get('wps', {}).get('enabled') else 'setup_required', 'mode': self.config['mode'], 'wps': 'browser_append_testing' if self.config.get('wps', {}).get('enabled') else 'not_connected',
+        result = {'readiness': 'testing' if self.config.get('wps', {}).get('enabled') else 'setup_required', 'mode': self.config['mode'], 'wps': 'browser_append_testing' if self.config.get('wps', {}).get('enabled') else 'not_connected',
             'accounts': self.store.rows('SELECT * FROM accounts'),
             'configured_accounts': [{'id': a['id'], 'name': a['name']} for a in self.config['accounts']],
             'works': self.store.rows('SELECT status,count(*) AS count FROM works GROUP BY status'),
@@ -193,6 +193,15 @@ class Service:
             'schedule': self.config.get('schedule'),
             'last_scheduled_run': self.store.get('last_scheduled_run'),
             'production_blockers': (['first real new scheduled append', 'actual full cycle with Codex closed', 'at least 24h observation'] if self.config.get('wps', {}).get('enabled') else ['verified public browser collection or official authorization', 'real media validation', 'WPS backup/test/approval', 'scheduler and 24h observation'])}
+
+        if self.config.get('word_export',{}).get('enabled'):
+            export=self.store.get('last_word_export',None)
+            verified=bool(export and Path(export.get('path','')).is_file())
+            result.update(destination='local_word',readiness='local_export_verified' if verified else 'local_word_configured',last_word_export=export)
+            if not self.config.get('wps',{}).get('enabled'):
+                result['wps']='optional_disabled'
+                result['production_blockers']=[] if verified else ['first real local Word export']
+        return result
 
     def doctor(self):
         import importlib.util
