@@ -65,6 +65,15 @@ class BrowserTests(unittest.TestCase):
         self.s.store.execute("UPDATE works SET status='archived'")
         self.assertEqual(self.collector.pending(10),[])
 
+    def test_crossed_threshold_refreshes_before_older_below_threshold(self):
+        for ident,likes,checked in [('124',100,'2026-10-01'),('125',499,'2026-11-01')]:
+            card=dict(self.card,id=ident,url='https://www.douyin.com/video/'+ident,likes_exact_display=506 if ident=='125' else 100)
+            self.collector.remember(card,{'sec_uid':'owner','name':'作者'},profile_card_verified=True)
+            work=validate_detail(card,dict(self.detail,url=card['url'],work_id=ident,likes_display=str(likes)))
+            self.s.ingest([work],'browser')
+            self.s.store.execute('UPDATE browser_candidates SET detail_checked=? WHERE id=?',(checked,ident))
+        self.assertEqual(self.collector.pending(1)[0]['id'],'125')
+
     def test_untrusted_saved_links_do_not_enter_detail_queue(self):
         self.collector.remember(self.card, {'sec_uid':'owner','name':'作者'})
         self.assertEqual(self.collector.pending(10), [])

@@ -259,7 +259,7 @@ class BrowserCollector:
 
     def pending(self, limit):
         # Oldest checked first; rotate errors/reviews, no starvation of newly found works.
-        rows = self.store.rows("""SELECT c.*,w.status AS work_status FROM browser_candidates c LEFT JOIN works w
+        rows = self.store.rows("""SELECT c.*,w.status AS work_status,w.likes AS previous_likes FROM browser_candidates c LEFT JOIN works w
             ON c.account_id=w.account_id AND c.id=w.id
             WHERE w.status IS NULL OR w.status NOT IN ('archived','already_present','duplicate_review')""")
         rows = [r for r in rows if json.loads(r['payload']).get('profile_card_verified')]
@@ -270,7 +270,11 @@ class BrowserCollector:
             approved={(str(v.get('account_id','')),str(v.get('id',''))) for v in self.config['append_policy'].get('approved_historical_works', [])}
             rows = [r for r in rows if r.get('work_status')!='baseline_ignored' or (r['account_id'],r['id']) not in ignored or (r['account_id'],r['id']) in approved]
         fresh = [r for r in rows if not r['detail_checked']]
-        old = sorted((r for r in rows if r['detail_checked']),key=lambda r:r['detail_checked'])
+        def refresh_priority(row):
+            display=json.loads(row['payload']).get('likes_exact_display')
+            crossed=isinstance(display,int) and display>self.config['threshold'] and row.get('previous_likes') is not None and row['previous_likes']<=self.config['threshold']
+            return (not crossed,row['detail_checked'])
+        old = sorted((r for r in rows if r['detail_checked']),key=refresh_priority)
         reserved = min(len(old), max(1, limit//3)) if fresh and limit else min(len(old),limit)
         buckets = {}
         for row in fresh:
