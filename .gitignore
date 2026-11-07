@@ -29,3 +29,6 @@ TEST_RESULTS.md
 .tools/
 
 config.json.*
+
+# Generated documents may contain private content
+exports/

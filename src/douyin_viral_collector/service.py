@@ -17,6 +17,10 @@ class Service:
     def __init__(self, config='config.json'):
         self.path = Path(config).resolve()
         self.config = json.loads(self.path.read_text(encoding='utf-8-sig'))
+        if 'minimum_likes' in self.config:
+            minimum=self.config['minimum_likes']
+            if isinstance(minimum,bool) or not isinstance(minimum,int) or minimum<0:raise ValueError('minimum_likes must be a non-negative integer')
+            self.config['threshold']=minimum-1
         self.root = (self.path.parent / self.config['data_dir']).resolve()
         self.store = Store(self.root)
 
@@ -230,7 +234,15 @@ class Service:
                 monitored = self.monitor()
                 from .reference import refresh_reference
                 reference = refresh_reference(self)
-                return {'monitor': monitored, 'reference': reference, 'process': self.process(retry=True), 'archive': self.archive()}
+                processed=self.process(retry=True)
+                if self.config.get('word_export',{}).get('enabled'):
+                    from .word_export import export_word
+                    word=export_word(self)
+                    archive=self.archive() if self.config.get('wps',{}).get('enabled') else {'remote':'disabled_by_user','destination':'local_word'}
+                    if not self.config.get('wps',{}).get('enabled'):
+                        for entry in word['works']:self.store.execute("UPDATE works SET status='exported_local' WHERE account_id=? AND id=? AND status='ready_to_archive'",(entry['account_id'],entry['id']))
+                    return {'monitor':monitored,'reference':reference,'process':processed,'word':word,'archive':archive}
+                return {'monitor': monitored, 'reference': reference, 'process': processed, 'archive': self.archive()}
             if command == 'process': return self.process(**kwargs)
             if command == 'archive': return self.archive()
             if command == 'status': return self.status()

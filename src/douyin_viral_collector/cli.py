@@ -21,10 +21,35 @@ def main():
             s.add_argument('--max-details', type=int, default=6, help='本轮最多核验详情数，0至100')
         if cmd == 'process': s.add_argument('--retry', action='store_true')
         if cmd == 'import': s.add_argument('file')
+    s=sub.add_parser('setup',help='首次配置目标账号和点赞门槛，默认生成本地Word')
+    s.add_argument('--profile',action='append',dest='profiles');s.add_argument('--min-likes',type=int);s.add_argument('--strict',action='store_true');s.add_argument('--output-dir')
+    sub.add_parser('login',help='打开浏览器，登录并核对账号名称')
+    sub.add_parser('organize',help='一键采集并生成Word；需要先完成setup和首次登录')
+    s=sub.add_parser('export-word',help='生成Word文稿；无需金山文档')
+    s.add_argument('--input',dest='input_file');s.add_argument('--output');s.add_argument('--no-cover',action='store_true')
     args = vars(p.parse_args())
     command, config = args.pop('command'), args.pop('config')
     try:
-        if command == 'test':
+        if command == 'setup':
+            from .onboarding import setup
+            output={'ok':True,'result':setup(config,**args)}
+        elif command == 'login':
+            from .onboarding import verify_profiles
+            output={'ok':True,'result':verify_profiles(config,interactive=True)}
+        elif command == 'organize':
+            from .onboarding import verify_profiles
+            verify_profiles(config)
+            service=Service(config)
+            try:output={'ok':True,'result':service.run('run')}
+            finally:service.store.db.close()
+        elif command == 'export-word':
+            from .word_export import export_word
+            from pathlib import Path
+            records=json.loads(Path(args['input_file']).read_text(encoding='utf-8-sig')) if args.get('input_file') else None
+            service=Service(config)
+            try:output={'ok':True,'result':export_word(service,output=args.get('output'),records=records,cover=not args['no_cover'])}
+            finally:service.store.db.close()
+        elif command == 'test':
             import unittest
             from pathlib import Path
             suite = unittest.defaultTestLoader.discover(str(Path(__file__).resolve().parents[2] / 'tests'))

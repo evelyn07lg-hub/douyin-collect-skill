@@ -1,26 +1,9 @@
 {
-  "mode": "import",
+  "mode": "browser",
   "data_dir": "data",
-  "threshold": 500,
   "interval_minutes": 2880,
   "model": "models/faster-whisper-small",
-  "accounts": [
-    {
-      "name": "账号一",
-      "id": "",
-      "token_env": "DOUYIN_ACCOUNT_1"
-    },
-    {
-      "name": "账号二",
-      "id": "",
-      "token_env": "DOUYIN_ACCOUNT_2"
-    },
-    {
-      "name": "账号三",
-      "id": "",
-      "token_env": "DOUYIN_ACCOUNT_3"
-    }
-  ],
+  "accounts": [],
   "public_profiles": [],
   "wps": {
     "url": "",
@@ -38,7 +21,7 @@
     "max_details": 30
   },
   "media_sources": {
-    "authorized_player_download": false
+    "authorized_player_download": true
   },
   "schedule": {
     "every_days": 2,
@@ -52,7 +35,7 @@
     "enabled": false,
     "reference_url": "",
     "reference_title": "",
-    "reference_path": "data/reference/library.docx",
+    "reference_path": "",
     "punctuation_model": "models/ct-punc",
     "reviewed_replacements": [],
     "asr_vocabulary": [],
@@ -72,5 +55,11 @@
       "refine_variants": true,
       "reviewed_ocr_corrections": []
     }
+  },
+  "minimum_likes": 500,
+  "word_export": {
+    "enabled": true,
+    "output_dir": "exports",
+    "title": "口播文稿整理"
   }
 }

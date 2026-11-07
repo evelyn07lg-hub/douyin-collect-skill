@@ -1,0 +1,14 @@
+[
+  {
+    "account_name": "示例博主",
+    "id": "demo-1",
+    "published_at": "2026-10-01",
+    "likes": 1200,
+    "comments": 30,
+    "favorites": 150,
+    "shares": 20,
+    "title": "示例：把想法变成行动",
+    "body": "先把目标拆成今天能完成的一步，再开始行动。\n这是一条用于演示排版的虚构文稿。",
+    "type": "video"
+  }
+]

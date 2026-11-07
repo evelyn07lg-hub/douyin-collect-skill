@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "douyin-viral-collector"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["python-docx>=1.1,<2"]
 
 [project.optional-dependencies]
 browser = ["playwright>=1.48,<2"]

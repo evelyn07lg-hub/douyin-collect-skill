@@ -46,7 +46,7 @@ class WPSBrowserWriter:
     def open(self,page):
         from .wps_browser import inspect_wps_page
         page.goto(self.url,wait_until='domcontentloaded',timeout=60000)
-        minimum=int(self.service.config['wps'].get('minimum_loaded_pages',180))
+        minimum=int(self.service.config['wps'].get('minimum_loaded_pages',1))
         page.wait_for_function('minimum=>Array.from(document.body.innerText.matchAll(/页面\\s*[:：]\\s*(\\d+)\\s*\\/\\s*(\\d+)/g)).some(m=>Number(m[2])>=minimum)',arg=minimum,timeout=45000)
         page.wait_for_timeout(4000)
         page.wait_for_function("!document.body.innerText.includes('文档正在加载中')",timeout=180000)

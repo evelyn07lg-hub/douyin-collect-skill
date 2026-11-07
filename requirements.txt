@@ -1,1 +1,2 @@
-# Core uses Python standard library only. Optional: pip install -e ".[media,api]"
+# Install the project and optional local media dependencies:
+-e .[browser,media,proofreading]

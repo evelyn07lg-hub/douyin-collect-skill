@@ -2,6 +2,7 @@
 import json
 import re
 import time
+import sys
 from pathlib import Path
 from urllib.parse import urlsplit
 from .service import now
@@ -324,7 +325,7 @@ class BrowserCollector:
         with sync_playwright() as p:
             try:
                 context = p.chromium.launch_persistent_context(str(self.root / 'browser-profile'),
-                    channel='msedge', headless=False, locale='zh-CN')
+                    channel='msedge' if sys.platform=='win32' else 'chromium', headless=False, locale='zh-CN')
             except Exception:
                 raise RuntimeError('browser_unavailable: close the probe browser before retrying; check Edge installation') from None
             try:
