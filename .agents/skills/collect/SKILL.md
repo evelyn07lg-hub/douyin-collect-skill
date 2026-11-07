@@ -5,6 +5,10 @@ description: 按自定义账号和点赞门槛整理抖音口播、图文及发�
 
 需要完整仓库。根据本文件位置向上定位含 pyproject.toml 和 src/douyin_viral_collector 的项目根目录，不假设当前目录。若仅安装了 Skill 文件，先取得公开仓库 evelyn07lg-hub/douyin-collect-skill 的完整程序；仅复制 SKILL.md 不包含运行环境。
 
+## 运行入口
+
+无需 Codex 时，双击 start.cmd 打开独立桌面工作台；账号、门槛、登录、原视频关联和 Word 导出均可在窗口内完成。scripts/start.py 和 start-console.cmd 保留命令行入口。桌面本地识别不等于已经完成逐字深度复核；在 Codex 中使用下面的流程进一步校对。
+
 ## 默认本地整理
 
 1. 确认目标账号主页、点赞门槛与日期范围。任意数量账号；默认不少于500赞，用户明确说“超过”则使用严格门槛。不需要已有共享文档。

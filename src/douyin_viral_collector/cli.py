@@ -23,6 +23,8 @@ def main():
         if cmd == 'import': s.add_argument('file')
     s=sub.add_parser('setup',help='首次配置目标账号和点赞门槛，默认生成本地Word')
     s.add_argument('--profile',action='append',dest='profiles');s.add_argument('--min-likes',type=int);s.add_argument('--strict',action='store_true');s.add_argument('--output-dir')
+    binding=sub.add_parser('bind-media',help='为待处理作品关联自己的原视频')
+    binding.add_argument('--work-id',required=True);binding.add_argument('--file',required=True)
     sub.add_parser('login',help='打开浏览器，登录并核对账号名称')
     sub.add_parser('organize',help='一键采集并生成Word；需要先完成setup和首次登录')
     s=sub.add_parser('export-word',help='生成Word文稿；无需金山文档')
@@ -33,6 +35,13 @@ def main():
         if command == 'setup':
             from .onboarding import setup
             output={'ok':True,'result':setup(config,**args)}
+        elif command == 'bind-media':
+            from .media_binding import bind_media
+            from .storage import lock
+            service=Service(config)
+            try:
+                with lock(service.root/'collect.lock'):output={'ok':True,'result':bind_media(service,**args)}
+            finally:service.store.db.close()
         elif command == 'login':
             from .onboarding import verify_profiles
             output={'ok':True,'result':verify_profiles(config,interactive=True)}

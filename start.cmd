@@ -1,6 +1,9 @@
 @echo off
 cd /d "%~dp0"
-where py >nul 2>nul
-if errorlevel 1 (python scripts\start.py) else (py -3 scripts\start.py)
-if errorlevel 1 (echo Collection needs attention. Please read the message above.) else (echo Done. Documents are in the configured output folder.)
+where pyw >nul 2>nul
+if not errorlevel 1 (start "" pyw -3 scripts\desktop.py & exit /b)
+where pythonw >nul 2>nul
+if not errorlevel 1 (start "" pythonw scripts\desktop.py & exit /b)
+echo Install Python 3.10+ from https://www.python.org/downloads/ first.
+echo Then double-click start.cmd again.
 pause

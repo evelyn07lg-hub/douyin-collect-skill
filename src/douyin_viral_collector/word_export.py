@@ -76,4 +76,7 @@ def export_word(service,output=None,records=None,title=None,cover=True):
   if package.testzip() is not None:raise RuntimeError('Word文件校验失败')
  temporary.replace(path)
  summary={'document_generated':True,'path':str(path.resolve()),'count':len(rows),'accounts':names,'pending':pending,'pending_count':len(pending),'cloud_sharing_enabled':bool(config.get('wps',{}).get('enabled')),'source':'provided_records' if explicit else 'local_collection_database','works':[{'account_id':k[0],'id':k[1]} for k in rows]}
+ if not explicit and not config.get('wps',{}).get('enabled'):
+  for entry in summary['works']:
+   service.store.execute("UPDATE works SET status='exported_local' WHERE account_id=? AND id=? AND status='ready_to_archive'",(entry['account_id'],entry['id']))
  report.write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8');summary['report_path']=str(report.resolve());service.store.set('last_word_export',{'path':summary['path'],'count':summary['count'],'report_path':summary['report_path']});return summary

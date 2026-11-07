@@ -48,3 +48,8 @@ class WordWorkflowTests(unittest.TestCase):
  def test_publication_dates_respect_timezone_and_timestamp(self):
   from douyin_viral_collector.word_export import _date
   self.assertEqual(_date('2026-10-01T20:30:00Z'),'2026年10月2日');self.assertEqual(_date(0),'1970年1月1日');self.assertEqual(_date(None),'发布时间待获取')
+
+ def test_direct_word_export_records_local_success_but_preserves_cloud_queue(self):
+  item=dict(self.records()[0],account_id='a');self.s.store.execute("INSERT INTO works(account_id,id,payload,likes,status,body) VALUES(?,?,?,?,?,?)",('a',item['id'],json.dumps(item),500,'ready_to_archive',item['body']))
+  export_word(self.s);self.assertEqual(self.s.store.rows('SELECT status FROM works')[0]['status'],'exported_local')
+  self.s.store.execute("UPDATE works SET status='ready_to_archive'");self.s.config['wps']['enabled']=True;export_word(self.s);self.assertEqual(self.s.store.rows('SELECT status FROM works')[0]['status'],'ready_to_archive')
