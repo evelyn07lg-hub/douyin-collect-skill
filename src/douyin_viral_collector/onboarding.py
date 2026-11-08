@@ -10,8 +10,10 @@ def setup(config='config.json',profiles=None,min_likes=None,strict=False,output_
  if profiles is None:
   current=[p.get('url','https://www.douyin.com/user/'+p['sec_uid']) for p in previous.get('public_profiles',[])]
   text=input('目标账号主页链接（多个用分号分隔；回车保留现有账号）：').strip()
-  profiles=re.split(r'[;；,，\s]+',text) if text else current
+  profiles=[text] if text else current
  if not profiles:raise ValueError('请至少提供一个抖音账号主页链接')
+ from .share_links import resolve_profiles
+ profiles=resolve_profiles(profiles,path.parent/values.get('data_dir','data'))
  known={p['sec_uid']:p for p in previous.get('public_profiles',[])};targets=[]
  for url in profiles:
   match=re.fullmatch(r'https://(?:www\.)?douyin\.com/user/([A-Za-z0-9_.-]+)(?:\?[^\s]*)?/?',url.strip())

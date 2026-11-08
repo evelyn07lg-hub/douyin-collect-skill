@@ -89,11 +89,11 @@ class App(tk.Tk):
         setup.columnconfigure(0, weight=1)
         ttk.Label(setup, text='选择账号，设好条件，其余交给本地工作台。', style='Card.TLabel',
             font=('Microsoft YaHei UI', 15, 'bold')).grid(row=0, column=0, sticky='w', pady=(0, 14))
-        ttk.Label(setup, text='目标账号主页 · 每行一个，数量不限', style='Card.TLabel').grid(row=1, column=0, sticky='w')
+        ttk.Label(setup, text='账号主页 / 抖音分享文字 · 每条一行', style='Card.TLabel').grid(row=1, column=0, sticky='w')
         self.profiles = tk.Text(setup, height=4, font=('Consolas', 10), relief='flat', bd=0, highlightthickness=1, highlightbackground='#cbd5e1',
             bg='#f8fafc', fg='#1e293b', padx=10, pady=8, wrap='word')
         self.profiles.grid(row=2, column=0, sticky='ew', pady=(7, 6))
-        ttk.Label(setup, text='使用 https://www.douyin.com/user/ 开头的网页版主页；登录账号可与目标账号不同。',
+        ttk.Label(setup, text='可直接粘贴抖音复制的整段文字或短链接；作品链接会尝试识别作者账号。',
             style='Card.TLabel', foreground='#64748b').grid(row=3, column=0, sticky='w')
         options = ttk.Frame(setup, style='Card.TFrame')
         options.grid(row=4, column=0, sticky='ew', pady=(20, 14))

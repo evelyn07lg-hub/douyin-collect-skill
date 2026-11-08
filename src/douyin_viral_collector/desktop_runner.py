@@ -82,12 +82,8 @@ class DesktopRunner:
 
     @staticmethod
     def validate(profiles, minimum):
-        urls = [x for x in re.split(r'[;；\s]+', profiles.strip()) if x]
-        if not urls:
-            raise ValueError('请至少输入一个抖音网页版账号主页链接。')
-        for url in urls:
-            if not re.fullmatch(r'https://(?:www\.)?douyin\.com/user/[A-Za-z0-9_.-]+/?(?:\?\S*)?', url):
-                raise ValueError('请使用 https://www.douyin.com/user/ 开头的账号主页链接。')
+        from .share_links import extract_links
+        urls = extract_links(profiles)
         if isinstance(minimum, bool) or not str(minimum).isdigit():
             raise ValueError('点赞门槛需要填写非负整数。')
         return list(dict.fromkeys(urls)), int(minimum)
