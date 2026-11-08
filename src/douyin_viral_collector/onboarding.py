@@ -13,7 +13,7 @@ def setup(config='config.json',profiles=None,min_likes=None,strict=False,output_
   profiles=[text] if text else current
  if not profiles:raise ValueError('请至少提供一个抖音账号主页链接')
  from .share_links import resolve_profiles
- profiles=resolve_profiles(profiles,path.parent/values.get('data_dir','data'))
+ profiles=resolve_profiles(profiles,path.parent/values.get('data_dir','data'),values)
  known={p['sec_uid']:p for p in previous.get('public_profiles',[])};targets=[]
  for url in profiles:
   match=re.fullmatch(r'https://(?:www\.)?douyin\.com/user/([A-Za-z0-9_.-]+)(?:\?[^\s]*)?/?',url.strip())
@@ -41,12 +41,12 @@ def verify_profiles(config='config.json',interactive=False):
  try:
   with lock(s.root/'collect.lock'):
    with sync_playwright() as p:
-    context=p.chromium.launch_persistent_context(str(s.root/'browser-profile'),channel='msedge' if sys.platform=='win32' else 'chromium',headless=False,locale='zh-CN')
+    context=p.chromium.launch_persistent_context(browser_options(s.config,s.root)[0],channel=browser_options(s.config,s.root)[1],headless=False,locale='zh-CN')
     try:
      page=context.new_page();collector=BrowserCollector(s)
      if interactive:
       page.goto('https://www.douyin.com/',wait_until='domcontentloaded',timeout=60000)
-      input('请在打开的Edge中自行完成登录或验证，然后回到这里按回车继续。')
+      input('请在打开的浏览器中自行完成登录或验证，然后回到这里按回车继续。')
      for profile in s.config['public_profiles']:
       collector.open(page,'https://www.douyin.com/user/'+profile['sec_uid']);page.wait_for_function("document.title.endsWith('的抖音 - 抖音')",timeout=30000)
       name=page.title().removesuffix('的抖音 - 抖音');profile.update(name=name,name_verified=True)

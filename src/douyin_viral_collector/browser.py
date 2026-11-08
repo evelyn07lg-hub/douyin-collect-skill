@@ -1,5 +1,6 @@
 """Public, logged-in DOM collector. No private endpoints, signing or CAPTCHA bypass."""
 import json
+from .browser_choice import browser_options
 import re
 import time
 import sys
@@ -324,8 +325,8 @@ class BrowserCollector:
         scans, checked, issues, blocked = [], 0, [], None
         with sync_playwright() as p:
             try:
-                context = p.chromium.launch_persistent_context(str(self.root / 'browser-profile'),
-                    channel='msedge' if sys.platform=='win32' else 'chromium', headless=False, locale='zh-CN')
+                context = p.chromium.launch_persistent_context(browser_options(self.service.config,self.root)[0],
+                    channel=browser_options(self.service.config,self.root)[1], headless=False, locale='zh-CN')
             except Exception:
                 raise RuntimeError('browser_unavailable: close the probe browser before retrying; check Edge installation') from None
             try:

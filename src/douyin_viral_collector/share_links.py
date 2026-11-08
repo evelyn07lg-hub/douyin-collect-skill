@@ -21,18 +21,19 @@ def profile_url(url):
     return 'https://www.douyin.com/user/' + m[1] if m else None
 
 
-def resolve_profiles(inputs, root):
+def resolve_profiles(inputs, root, config=None):
     urls = extract_links('\n'.join(inputs))
     results = [profile_url(u) for u in urls]
     if all(results):
         return list(dict.fromkeys(results))
     import sys
+    from .browser_choice import browser_options
     from playwright.sync_api import sync_playwright
     from .storage import lock
     with lock(Path(root) / 'collect.lock'):
         with sync_playwright() as p:
-            context = p.chromium.launch_persistent_context(str(Path(root)/'browser-profile'),
-                channel='msedge' if sys.platform=='win32' else 'chromium', headless=False, locale='zh-CN')
+            context = p.chromium.launch_persistent_context(browser_options(config or {},root)[0],
+                channel=browser_options(config or {},root)[1], headless=False, locale='zh-CN')
             try:
                 page = context.new_page()
                 for i, url in enumerate(urls):

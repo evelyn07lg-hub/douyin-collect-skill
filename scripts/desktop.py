@@ -107,25 +107,30 @@ class App(tk.Tk):
         self.model = tk.StringVar(value='标准 · 下载较小')
         ttk.Combobox(options, state='readonly', width=24, textvariable=self.model,
             values=['标准 · 下载较小', '精细 · large-v3-turbo']).grid(row=0, column=4)
+        browser_row=ttk.Frame(setup,style='Card.TFrame')
+        browser_row.grid(row=5,column=0,sticky='w',pady=(0,12))
+        ttk.Label(browser_row,text='采集浏览器',style='Card.TLabel').pack(side='left',padx=(0,12))
+        self.browser=tk.StringVar(value='Edge')
+        ttk.Combobox(browser_row,state='readonly',values=['Edge','Chrome'],textvariable=self.browser,width=18).pack(side='left')
         output = ttk.Frame(setup, style='Card.TFrame')
-        output.grid(row=5, column=0, sticky='ew')
+        output.grid(row=6, column=0, sticky='ew')
         output.columnconfigure(1, weight=1)
         ttk.Label(output, text='文稿保存到', style='Card.TLabel').grid(row=0, column=0, padx=(0, 12))
         self.output = tk.StringVar(value=str(self.project / 'exports'))
         ttk.Entry(output, textvariable=self.output).grid(row=0, column=1, sticky='ew')
         ttk.Button(output, text='选择文件夹', command=self.choose_output).grid(row=0, column=2, padx=(10, 0))
         actions = ttk.Frame(setup, style='Card.TFrame')
-        actions.grid(row=6, column=0, sticky='w', pady=(24, 14))
+        actions.grid(row=7, column=0, sticky='w', pady=(24, 14))
         self.start_button = ttk.Button(actions, text='开始整理并生成 Word', style='Primary.TButton', command=self.start)
         self.start_button.pack(side='left', padx=(0, 10))
         self.login_button = ttk.Button(actions, text='登录 / 重新登录', command=lambda: self.start(True))
         self.login_button.pack(side='left', padx=(0, 10))
         self.export_button = ttk.Button(actions, text='仅导出已有稿件', command=lambda: self.task(self.runner.export))
         self.export_button.pack(side='left')
-        ttk.Label(setup, text='首次使用自动准备环境和模型。出现登录提示时，在 Edge 中完成验证，再点击下方继续。',
-            style='Card.TLabel', foreground='#64748b').grid(row=7, column=0, sticky='w', pady=(0, 9))
+        ttk.Label(setup, text='首次使用自动准备环境和模型。出现登录提示时，在所选浏览器中完成验证，再点击下方继续。',
+            style='Card.TLabel', foreground='#64748b').grid(row=8, column=0, sticky='w', pady=(0, 9))
         ttk.Label(setup, text='默认生成本地自动识别稿；共享文档由博主自行创建和开启。复杂人名、专业词建议复核。',
-            style='Card.TLabel', foreground='#64748b').grid(row=8, column=0, sticky='w')
+            style='Card.TLabel', foreground='#64748b').grid(row=9, column=0, sticky='w')
         toolbar = ttk.Frame(works)
         toolbar.pack(fill='x', pady=(0, 12))
         ttk.Button(toolbar, text='刷新作品列表', command=self.refresh_items).pack(side='left')
@@ -155,7 +160,7 @@ class App(tk.Tk):
         self.continue_button.pack(side='left')
         self.cancel_button = ttk.Button(controls, text='停止当前任务', state='disabled', command=self.runner.cancel)
         self.cancel_button.pack(side='left', padx=10)
-        self.open_file_button = ttk.Button(controls, text='打开最新 Word', state='disabled', command=self.open_file)
+        self.open_file_button = ttk.Button(controls, text='用 WPS 打开文稿', state='disabled', command=self.open_file)
         self.open_file_button.pack(side='right')
         ttk.Button(controls, text='打开输出文件夹', command=self.open_folder).pack(side='right', padx=10)
         self.load_config()
@@ -166,6 +171,7 @@ class App(tk.Tk):
     def load_config(self):
         try:
             config = self.runner.config()
+            self.browser.set('Chrome' if config.get('browser')=='chrome' else 'Edge')
             urls = [p.get('url') or 'https://www.douyin.com/user/' + p['sec_uid'] for p in config.get('public_profiles', [])]
             self.profiles.insert('1.0', '\n'.join(urls))
             self.minimum.set(str(config.get('minimum_likes', config.get('threshold', 500))))
@@ -183,7 +189,7 @@ class App(tk.Tk):
     def start(self, login_only=False):
         values = dict(profiles=self.profiles.get('1.0', 'end'), minimum=self.minimum.get(),
             strict=self.comparison.get() == '严格超过', output_dir=self.output.get() or 'exports',
-            model='large-v3-turbo' if self.model.get().startswith('精细') else 'small', login_only=login_only)
+            model='large-v3-turbo' if self.model.get().startswith('精细') else 'small', login_only=login_only, browser=self.browser.get().lower())
         try:
             self.runner.validate(values['profiles'], values['minimum'])
         except ValueError as exc:
@@ -218,7 +224,7 @@ class App(tk.Tk):
                     self.stage.set(event['text'])
                 if kind == 'login_required':
                     self.continue_button.configure(state='normal')
-                    self.stage.set('请在 Edge 中登录或完成验证，再点击“登录完成，继续”。')
+                    self.stage.set('请在所选浏览器中登录或完成验证，再点击“登录完成，继续”。')
                 if kind == 'export':
                     self.last_file = event.get('path')
                     if self.last_file:
@@ -282,7 +288,9 @@ class App(tk.Tk):
 
     def open_file(self):
         if self.last_file and Path(self.last_file).is_file():
-            self.open_path(Path(self.last_file))
+            from douyin_viral_collector.wps_local import open_document
+            try:open_document(self.last_file)
+            except RuntimeError as exc:messagebox.showinfo('使用 WPS 打开',str(exc),parent=self)
 
     def open_folder(self):
         folder = Path(self.output.get())

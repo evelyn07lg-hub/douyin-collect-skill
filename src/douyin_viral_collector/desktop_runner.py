@@ -92,12 +92,18 @@ class DesktopRunner:
         path = self.root / 'config.json'
         return json.loads(path.read_text(encoding='utf-8-sig')) if path.is_file() else {}
 
-    def start(self, profiles, minimum, strict=False, output_dir='exports', model='small', login_only=False):
+    def start(self, profiles, minimum, strict=False, output_dir='exports', model='small', login_only=False, browser='edge'):
         urls, minimum = self.validate(profiles, minimum)
         if model not in ('small', 'large-v3-turbo'):
             raise ValueError('不支持的本地识别模型。')
         self.cancelled.clear()
         self.prepare()
+        if browser not in ('edge','chrome'):raise ValueError('请选择 Edge 或 Chrome')
+        selected=self.config()
+        if not selected:
+            selected=json.loads((self.root/'config.example.json').read_text(encoding='utf-8-sig'))
+        selected['browser']=browser
+        if selected:(self.root/'config.json').write_text(json.dumps(selected,ensure_ascii=False,indent=2),encoding='utf-8')
         self.emit({'kind': 'stage', 'text': '保存账号和整理条件'})
         args = ['-m', 'douyin_viral_collector.cli', 'setup', '--min-likes', minimum, '--output-dir', output_dir]
         for url in urls:
