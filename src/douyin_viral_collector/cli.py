@@ -77,7 +77,9 @@ def main():
                 service.store.db.close()
     except Exception as exc:
         # Avoid raw HTTP exceptions that may include OAuth query secrets.
-        output = {'ok': False, 'error': str(exc) if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__}
+        if isinstance(exc, NameError):
+            print('组件加载失败：'+str(exc),file=sys.stderr)
+        output = {'ok': False, 'error': str(exc) if isinstance(exc, (ValueError, RuntimeError)) else '程序组件加载失败，请更新或重启工作台；详情见运行记录。' if isinstance(exc,NameError) else type(exc).__name__}
     print(json.dumps(output, ensure_ascii=False))
     if not output['ok']: raise SystemExit(1)
 

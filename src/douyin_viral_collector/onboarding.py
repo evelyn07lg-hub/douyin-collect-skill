@@ -1,5 +1,6 @@
 """Beginner configuration without a pre-existing cloud document."""
 import json,re,shutil,sys
+from .browser_choice import browser_options
 from datetime import datetime
 from pathlib import Path
 
