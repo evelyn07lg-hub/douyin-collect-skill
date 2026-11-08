@@ -3,11 +3,11 @@ import hashlib,json,re
 from datetime import datetime
 from pathlib import Path
 
-def _font(style,size):
+def _font(style,size,font='宋体'):
  from docx.shared import Pt
  from docx.oxml.ns import qn
- style.font.name='宋体';style.font.size=Pt(size)
- style.element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'),'宋体')
+ style.font.name=font;style.font.size=Pt(size)
+ style.element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'),font)
 
 def _date(value):
  from .wps import publication_date
@@ -46,9 +46,13 @@ def export_word(service,output=None,records=None,title=None,cover=True):
  if path.suffix.lower()!='.docx':raise ValueError('输出文件需使用 .docx 扩展名')
  if path.exists():raise ValueError('输出文件已存在；请使用新文件名以保留已有校订')
  path.parent.mkdir(parents=True,exist_ok=True)
- doc=Document();section=doc.sections[0];section.page_width=Cm(21);section.page_height=Cm(29.7);section.top_margin=section.bottom_margin=Cm(2.2);section.left_margin=section.right_margin=Cm(2.5)
- for label,size in [('Normal',10.5),('Title',24),('Heading 1',14)]:
-  st=doc.styles[label];_font(st,size);st.font.color.rgb=RGBColor(0,0,0);st.paragraph_format.space_before=Pt(0);st.paragraph_format.space_after=Pt(0);st.paragraph_format.line_spacing=1
+ from .document_settings import formatting
+ fmt=formatting(config);base=config.get('word_export',{}).get('base_document');base=service.path.parent/base if base else None
+ doc=Document(base) if base else Document();old_count=len(doc.paragraphs);cover=cover and not base
+ section=doc.sections[0]
+ if not base:section.page_width=Cm(21);section.page_height=Cm(29.7);section.top_margin=section.bottom_margin=Cm(2.2);section.left_margin=section.right_margin=Cm(2.5)
+ for label,size in ([] if base else [('Normal',fmt['body_size']),('Title',24),('Heading 1',fmt['heading_size'])]):
+  st=doc.styles[label];_font(st,size,fmt['font']);st.font.color.rgb=RGBColor(0,0,0);st.paragraph_format.space_before=Pt(0);st.paragraph_format.space_after=Pt(0);st.paragraph_format.line_spacing=1
  names=[]
  for item in rows.values():
   if item['account_name'] not in names:names.append(item['account_name'])
@@ -70,6 +74,18 @@ def export_word(service,output=None,records=None,title=None,cover=True):
    if item.get('title'):doc.add_paragraph(str(item['title']))
    for line in item['body'].splitlines():
     if line.strip():doc.add_paragraph(line.strip())
+ if base and path.resolve()==base.resolve():raise ValueError('输出不能覆盖原始文档')
+ effective=dict(fmt)
+ if base and fmt.get('inherit_existing'):
+  normal=doc.styles['Normal'];effective['font']=normal.font.name or fmt['font'];effective['body_size']=normal.font.size.pt if normal.font.size else fmt['body_size']
+ from docx.oxml.ns import qn
+ for paragraph in doc.paragraphs[old_count:]:
+  heading=paragraph.style.name=='Heading 1';cover_title=paragraph.style.name=='Title'
+  for run in paragraph.runs:
+   run.font.name=effective['font'];run.font.size=Pt(effective['heading_size'] if heading else 24 if cover_title else effective['body_size']);run._element.get_or_add_rPr().get_or_add_rFonts().set(qn('w:eastAsia'),effective['font'])
+  paragraph.paragraph_format.line_spacing=effective['line_spacing']
+  if heading:paragraph.paragraph_format.page_break_before=bool(fmt['account_page_break'])
+  elif re.match(r'^\d{4}年.*点赞',paragraph.text):paragraph.paragraph_format.space_before=Pt(fmt['article_gap'])
  temporary=path.with_name(path.stem+'.partial.docx');doc.save(temporary)
  from zipfile import ZipFile
  with ZipFile(temporary) as package:

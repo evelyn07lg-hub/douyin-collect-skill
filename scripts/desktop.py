@@ -22,7 +22,7 @@ from douyin_viral_collector.desktop_runner import DesktopRunner
 
 STATUS = {'discovered': '等待识别', 'processing': '识别中', 'waiting_media': '需要原视频',
     'waiting_subtitles': '需要字幕画面', 'failed': '待重试', 'ready_to_archive': '可导出',
-    'exported_local': '已导出 Word', 'archived': '已归档', 'already_present': '已收录',
+    'exported_local': '已导出文稿', 'archived': '已归档', 'already_present': '已收录',
     'duplicate_review': '疑似重复，待核对', 'uncertain': '需要核对'}
 
 
@@ -121,12 +121,13 @@ class App(tk.Tk):
         ttk.Button(output, text='选择文件夹', command=self.choose_output).grid(row=0, column=2, padx=(10, 0))
         actions = ttk.Frame(setup, style='Card.TFrame')
         actions.grid(row=7, column=0, sticky='w', pady=(24, 14))
-        self.start_button = ttk.Button(actions, text='开始整理并生成 Word', style='Primary.TButton', command=self.start)
+        self.start_button = ttk.Button(actions, text='开始整理并生成文稿', style='Primary.TButton', command=self.start)
         self.start_button.pack(side='left', padx=(0, 10))
         self.login_button = ttk.Button(actions, text='登录 / 重新登录', command=lambda: self.start(True))
         self.login_button.pack(side='left', padx=(0, 10))
         self.export_button = ttk.Button(actions, text='仅导出已有稿件', command=lambda: self.task(self.runner.export))
         self.export_button.pack(side='left')
+        ttk.Button(actions,text='文档与格式设置',command=self.document_settings).pack(side='left',padx=(10,0))
         ttk.Label(setup, text='首次使用自动准备环境和模型。出现登录提示时，在所选浏览器中完成验证，再点击下方继续。',
             style='Card.TLabel', foreground='#64748b').grid(row=8, column=0, sticky='w', pady=(0, 9))
         ttk.Label(setup, text='默认生成本地自动识别稿；共享文档由博主自行创建和开启。复杂人名、专业词建议复核。',
@@ -150,7 +151,7 @@ class App(tk.Tk):
         self.log.pack(fill='both', expand=True)
         bottom = ttk.Frame(main, padding=(0, 14, 0, 0))
         bottom.pack(fill='x')
-        self.stage = tk.StringVar(value='就绪 · 无需启动 Codex')
+        self.stage = tk.StringVar(value='就绪')
         ttk.Label(bottom, textvariable=self.stage).pack(anchor='w')
         self.progress = ttk.Progressbar(bottom, mode='indeterminate')
         self.progress.pack(fill='x', pady=(8, 10))
@@ -229,7 +230,7 @@ class App(tk.Tk):
                     self.last_file = event.get('path')
                     if self.last_file:
                         self.open_file_button.configure(state='normal')
-                    self.stage.set(f"已生成 Word：{event.get('count', 0)}篇；待处理：{event.get('pending_count', 0)}篇。")
+                    self.stage.set(f"已生成文稿：{event.get('count', 0)}篇；待处理：{event.get('pending_count', 0)}篇。")
                 if kind in ('log', 'error'):
                     self.log.configure(state='normal')
                     self.log.insert('end', event.get('text', '') + '\n')
@@ -285,6 +286,27 @@ class App(tk.Tk):
             filetypes=[('视频文件', '*.mp4 *.mov *.mkv *.webm *.avi'), ('所有文件', '*.*')])
         if file:
             self.task(lambda: self.runner.bind_and_process(item['id'], file))
+
+    def document_settings(self):
+        from douyin_viral_collector.document_settings import save_settings,DEFAULTS
+        config=self.runner.config();fmt=dict(DEFAULTS,**config.get('document_format',{}));dialog=tk.Toplevel(self);dialog.title('文档与格式设置');dialog.geometry('720x630');dialog.transient(self)
+        panel=ttk.Frame(dialog,padding=20);panel.pack(fill='both',expand=True);panel.columnconfigure(1,weight=1);variables={}
+        fields=[('base_document','已有本地文档（可选）',config.get('word_export',{}).get('base_document','')),('url','金山共享文档链接（可选）',config.get('wps',{}).get('url','')),('title','共享文档准确标题',config.get('wps',{}).get('title','')),('font','字体',fmt['font']),('body_size','正文字号（磅）',fmt['body_size']),('heading_size','账号标题字号（磅）',fmt['heading_size']),('line_spacing','行距（倍数）',fmt['line_spacing']),('article_gap','篇间距（磅）',fmt['article_gap'])]
+        for row,(key,label,value) in enumerate(fields):
+            variables[key]=tk.StringVar(value=str(value));ttk.Label(panel,text=label).grid(row=row,column=0,sticky='w',pady=9);ttk.Entry(panel,textvariable=variables[key]).grid(row=row,column=1,sticky='ew',padx=(10,0))
+        def choose():
+            selected=filedialog.askopenfilename(parent=dialog,filetypes=[('WPS / Word 文档','*.docx')])
+            if selected:variables['base_document'].set(selected)
+        ttk.Button(panel,text='选择',command=choose).grid(row=0,column=2,padx=6)
+        flags={}
+        for row,(key,label,value) in enumerate([('inherit_existing','已有本地文档：沿用原有默认正文样式',fmt['inherit_existing']),('account_page_break','账号标题另起一页',fmt['account_page_break']),('cloud','启用共享文档追加（首次需备份及副本验证）',config.get('wps',{}).get('enabled',False))],8):
+            flags[key]=tk.BooleanVar(value=value);ttk.Checkbutton(panel,text=label,variable=flags[key]).grid(row=row,column=0,columnspan=3,sticky='w',pady=8)
+        ttk.Label(panel,text='本地已有文档保留原文和原格式，追加后另存新文件；不覆盖原件。\n自定义样式用于新增内容。共享写入需先完成该目标的验证。',wraplength=650).grid(row=11,column=0,columnspan=3,sticky='w',pady=12)
+        def save():
+            try:
+                values={k:v.get() for k,v in variables.items()};values.update({k:v.get() for k,v in flags.items()});save_settings(self.project,**values);self.stage.set('文档与格式设置已保存');dialog.destroy()
+            except (ValueError,OSError) as exc:messagebox.showerror('设置未保存',str(exc),parent=dialog)
+        ttk.Button(panel,text='保存设置',command=save,style='Primary.TButton').grid(row=12,column=1,sticky='e')
 
     def open_file(self):
         if self.last_file and Path(self.last_file).is_file():

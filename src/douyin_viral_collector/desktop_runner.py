@@ -113,7 +113,7 @@ class DesktopRunner:
         self._command(args)
         config = self.config()
         config['model'] = 'models/faster-whisper-' + model
-        config.setdefault('wps', {})['enabled'] = False
+        config.setdefault('wps', {}).setdefault('enabled', False)
         (self.root / 'config.json').write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         if not login_only and not (self.root / config['model'] / 'model.bin').is_file():
             self.emit({'kind': 'stage', 'text': '首次下载识别模型，此步骤可能需要较长时间'})

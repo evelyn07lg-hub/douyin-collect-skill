@@ -16,7 +16,7 @@ class DesktopWorkflowTests(unittest.TestCase):
         (self.root/'config.json').write_text(json.dumps(self.config),encoding='utf-8')
         self.model=self.root/'models/faster-whisper-small/model.bin';self.model.parent.mkdir(parents=True);self.model.write_bytes(b'fixture')
     def tearDown(self):self.tmp.cleanup()
-    def test_independent_flow_orders_login_before_collection_and_disables_cloud(self):
+    def test_independent_flow_orders_login_before_collection_and_preserves_explicit_cloud_setting(self):
         calls=[]
         def command(args,login=False):
             calls.append((args,login))
@@ -24,7 +24,7 @@ class DesktopWorkflowTests(unittest.TestCase):
             return {}
         with patch.object(self.runner,'prepare'),patch.object(self.runner,'_command',side_effect=command):
             self.runner.start('https://www.douyin.com/user/example','500')
-        self.assertEqual([c[0][2] for c in calls],['setup','login','organize']);self.assertTrue(calls[1][1]);self.assertFalse(self.runner.config()['wps']['enabled']);self.assertEqual(self.events[-1]['count'],2)
+        self.assertEqual([c[0][2] for c in calls],['setup','login','organize']);self.assertTrue(calls[1][1]);self.assertTrue(self.runner.config()['wps']['enabled']);self.assertEqual(self.events[-1]['count'],2)
     def test_login_failure_does_not_start_collection(self):
         def command(args,login=False):
             if login:raise RuntimeError('需要用户验证')

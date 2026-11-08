@@ -134,7 +134,7 @@ class WPSBrowserWriter:
         try:
             page.keyboard.press('Enter');page.wait_for_timeout(600)
             from .richtext import paste_archive
-            paste_archive(page, text.splitlines())
+            paste_archive(page, text.splitlines(),formatting=self.service.config.get('document_format'))
             page.wait_for_timeout(4000)
             error=None
             for attempt in range(3):
@@ -145,7 +145,7 @@ class WPSBrowserWriter:
                         proof.update(verify_account_page_breaks(after,self.names))
                     from .richtext import verify_archive_format
                     inserted = [k for op,i,j,start,end in difflib.SequenceMatcher(a=before['canonical'],b=after['canonical'],autojunk=False).get_opcodes() if op=='insert' for k in range(start,end)]
-                    proof.update(verify_archive_format(after_path, self.names, inserted))
+                    proof.update(verify_archive_format(after_path, self.names, inserted,formatting=self.service.config.get('document_format')))
                     self.record(row,'verified',text,before_path,after_path)
                     (folder/'verification.json').write_text(json.dumps(proof,ensure_ascii=False,indent=2),encoding='utf-8')
                     return proof
