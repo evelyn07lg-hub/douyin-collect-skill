@@ -21,6 +21,7 @@ class DesktopRunner:
         if self.cancelled.is_set():
             raise RuntimeError('操作已取消')
         env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
+        env['PYTHONPATH']=str(self.root/'src')+os.pathsep+env.get('PYTHONPATH','')
         command = [str(self.python), '-u', *map(str, args)]
         self.process = subprocess.Popen(command, cwd=self.root, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -68,17 +69,27 @@ class DesktopRunner:
             self.process.terminate()
 
     def prepare(self):
+        from .environment_setup import choose_runtime,requirements
+        self.emit({'kind':'stage','text':'检测已有依赖和可复用的 Python 环境'})
+        needed=requirements(self.config());self.python,missing=choose_runtime(self.root,sys.executable,needed)
+        if not missing:
+            self.emit({'kind':'stage','text':'依赖已就绪，跳过安装'})
+            return
         if not self.python.is_file():
-            self.emit({'kind': 'stage', 'text': '创建独立运行环境'})
-            subprocess.run([sys.executable, '-m', 'venv', str(self.root / '.venv')], check=True,
-                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
-        marker = self.root / '.venv' / '.collect-installed-0.3.0'
-        if not marker.is_file():
-            self.emit({'kind': 'stage', 'text': '首次安装依赖，请保持网络连接'})
-            self._command(['-m', 'pip', 'install', '-e', '.[browser,media,proofreading]'])
-            if os.name != 'nt':
-                self._command(['-m', 'playwright', 'install', 'chromium'])
-            marker.write_text('0.3.0', encoding='utf-8')
+            self.emit({'kind':'stage','text':'创建项目专用环境'})
+            subprocess.run([sys.executable,'-m','venv','--system-site-packages',str(self.root/'.venv')],check=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        from .environment_setup import probe
+        detected=probe(self.python,needed)
+        if detected is not None:missing=detected['missing']
+        if not missing:
+            self.emit({'kind':'stage','text':'依赖已就绪，跳过安装'})
+            return
+        self.emit({'kind':'stage','text':f'补齐 {len(missing)} 个缺失组件，详情见运行记录'})
+        self.emit({'kind':'log','text':'缺失组件：'+', '.join(missing)})
+        self._command(['-m','pip','install','--prefer-binary','--disable-pip-version-check',*missing])
+        from .environment_setup import probe
+        checked=probe(self.python,needed)
+        if checked is None or checked['missing']:raise RuntimeError('依赖检查未通过，请查看运行记录。')
 
     @staticmethod
     def validate(profiles, minimum):
@@ -112,7 +123,10 @@ class DesktopRunner:
             args.append('--strict')
         self._command(args)
         config = self.config()
-        config['model'] = 'models/faster-whisper-' + model
+        from .environment_setup import existing_model
+        reused=existing_model(self.root,sys.executable,model)
+        config['model'] = str(reused) if reused else 'models/faster-whisper-' + model
+        if reused:self.emit({'kind':'stage','text':'已找到本机识别模型，跳过下载'})
         config.setdefault('wps', {}).setdefault('enabled', False)
         (self.root / 'config.json').write_text(json.dumps(config, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         if not login_only and not (self.root / config['model'] / 'model.bin').is_file():

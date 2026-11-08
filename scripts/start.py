@@ -8,14 +8,11 @@ def main():
     args=parser.parse_args()
     root=Path(__file__).resolve().parents[1]
     if sys.version_info<(3,10):raise SystemExit('Python 3.10 or newer is required.')
-    env=root/'.venv';python=env/('Scripts/python.exe' if sys.platform=='win32' else 'bin/python')
-    if not python.is_file():venv.EnvBuilder(with_pip=True).create(env)
-    marker=env/'.collect-installed-0.3.0'
-    def run(*parts):subprocess.run([str(python),*map(str,parts)],cwd=root,check=True)
-    if not marker.is_file():
-        run('-m','pip','install','-e','.[browser,media,proofreading]')
-        if sys.platform!='win32':run('-m','playwright','install','chromium')
-        marker.write_text('0.3.0',encoding='utf-8')
+    sys.path.insert(0,str(root/'src'))
+    from douyin_viral_collector.desktop_runner import DesktopRunner
+    runner=DesktopRunner(root,lambda event: print(event.get('text',''),flush=True))
+    runner.prepare();python=runner.python
+    def run(*parts):runner._command(list(parts))
     if args.install_only:return
     if not (root/'config.json').is_file():run('-m','douyin_viral_collector.cli','setup')
     config=json.loads((root/'config.json').read_text(encoding='utf-8-sig'))

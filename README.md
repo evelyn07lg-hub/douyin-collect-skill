@@ -48,7 +48,7 @@ Collect 把账号筛选、作品记录、素材状态和文稿排版放在同一
 
 分享短链接会通过正常浏览器展开；作品链接会尝试识别作者账号，无法唯一确认时会提示补充主页或完成验证。
 
-点击 **「开始整理并生成 Word」**。首次会自动创建独立 Python 环境、安装依赖并下载所选模型；需要联网，首次准备与长视频识别可能耗时较长。进度和具体信息可在「运行记录」查看。
+点击 **「开始整理并生成 Word」**。运行前会检测项目环境及当前 Python；已有完整环境直接复用，不按版本标记重复安装。缺少组件时才创建或补齐项目环境；已有兼容模型会复用，未找到时才下载所选模型；需要联网，首次准备与长视频识别可能耗时较长。进度和具体信息可在「运行记录」查看。
 
 ### 3. 完成登录，打开成果
 
@@ -148,19 +148,21 @@ Collect 把账号筛选、作品记录、素材状态和文稿排版放在同一
 <summary><strong>展开命令行示例</strong></summary>
 
 ```powershell
-# 首次安装，不立即采集
+# 检测并准备环境，不立即采集
 python scripts/start.py --install-only
+# 如需使用下方 collect 命令，先在自己的虚拟环境中安装项目
+python -m pip install -e ".[browser,media]"
 
 # 配置账号与门槛，可重复 --profile
-.venv\Scripts\collect.exe setup --profile https://www.douyin.com/user/目标主页ID --min-likes 500
-.venv\Scripts\collect.exe login
-.venv\Scripts\collect.exe organize
+collect setup --profile https://www.douyin.com/user/目标主页ID --min-likes 500
+collect login
+collect organize
 
 # 只重新生成 Word
-.venv\Scripts\collect.exe export-word
+collect export-word
 
 # 将自己已经准备好的完整正文排版成 Word
-.venv\Scripts\collect.exe export-word --input examples/word-records.json
+collect export-word --input examples/word-records.json
 ```
 
 新配置 `minimum_likes: 500` 包含 500；`setup --strict --min-likes 500` 表示严格超过。旧配置 `threshold: 500` 保持原来的严格超过语义。已有配置在修改前会备份，输出文件不会覆盖同名文件。
@@ -185,3 +187,7 @@ python -m unittest discover -s tests -q
 点击「文档与格式设置」可以选择已有 `.docx`。整理结果会在保留原文的基础上另存新副本，原文件不覆盖；可沿用已有文档的默认正文样式，也可以为新增内容自定义样式。
 
 已有金山共享文档可以填写链接和准确标题，并按需要启用追加。仅添加链接不等于已验证可写；首次写入需备份与副本验证，旧文字和格式保持保护。共享权限仍由博主自行开启。
+
+### 首次准备为什么需要时间
+
+依赖是浏览器自动化、语音识别、图片文字识别和文稿处理所需的组件，不是每次重新安装。程序先检测实际包版本；完整环境直接跳过安装，缺失项才补装。未启用的进阶校对组件不会一并安装。安装记录和模型下载分开显示；真正首次下载仍受网络速度与所选模型大小影响。
