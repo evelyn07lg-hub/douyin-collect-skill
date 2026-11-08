@@ -14,7 +14,7 @@ def _date(value):
  result=publication_date(value)
  return '发布时间待获取' if result=='日期待获取' else result
 
-def export_word(service,output=None,records=None,title=None,cover=True):
+def export_word(service,output=None,records=None,title=None,cover=True,allow_empty=False):
  from docx import Document
  from docx.shared import Cm,Pt,RGBColor
  from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -41,6 +41,7 @@ def export_word(service,output=None,records=None,title=None,cover=True):
  stamp=datetime.now().strftime('%Y%m%d_%H%M%S_%f');report=folder/('整理记录_'+stamp+'.json')
  if not rows:
   report.write_text(json.dumps({'document_generated':False,'pending':pending,'reason':'暂无完整且达标的正文'},ensure_ascii=False,indent=2),encoding='utf-8')
+  if allow_empty:return {'document_generated':False,'path':None,'count':0,'pending':pending,'pending_count':len(pending),'works':[],'report_path':str(report.resolve()),'review_status':'no_complete_body'}
   raise ValueError('暂无完整且达标的正文；待处理清单：'+str(report))
  path=Path(output).resolve() if output else folder/('口播文稿_'+stamp+'.docx')
  if path.suffix.lower()!='.docx':raise ValueError('输出文件需使用 .docx 扩展名')
@@ -67,7 +68,7 @@ def export_word(service,output=None,records=None,title=None,cover=True):
   heading=doc.add_paragraph(name,style='Heading 1');heading.alignment=WD_ALIGN_PARAGRAPH.CENTER;heading.paragraph_format.page_break_before=bool(cover or index);heading.paragraph_format.space_after=Pt(8)
   items=sorted((w for w in rows.values() if w['account_name']==name),key=lambda w:(str(w.get('published_at','')),w['id']))
   for n,item in enumerate(items):
-   header=_date(item.get('published_at'))+f"，点赞{item['likes']} 评论{stat(item,'comments')} 收藏{stat(item,'favorites')} 分享{stat(item,'shares')}；"
+   header=_date(item.get('published_at'))+f"，点赞{item.get('likes_display') if item.get('likes_exact') is False else item['likes']} 评论{stat(item,'comments')} 收藏{stat(item,'favorites')} 分享{stat(item,'shares')}；"
    p=doc.add_paragraph(header);p.paragraph_format.space_before=Pt(10.5 if n else 0)
    kind=item.get('video_type') or ('视频文案' if item.get('content_mode')=='published_copy' else '图文' if item.get('type')=='image' else '口播视频')
    doc.add_paragraph(kind)
@@ -91,7 +92,11 @@ def export_word(service,output=None,records=None,title=None,cover=True):
  with ZipFile(temporary) as package:
   if package.testzip() is not None:raise RuntimeError('Word文件校验失败')
  temporary.replace(path)
- summary={'document_generated':True,'path':str(path.resolve()),'count':len(rows),'accounts':names,'pending':pending,'pending_count':len(pending),'cloud_sharing_enabled':bool(config.get('wps',{}).get('enabled')),'source':'provided_records' if explicit else 'local_collection_database','works':[{'account_id':k[0],'id':k[1]} for k in rows]}
+ review_counts={}
+ for item in rows.values():
+  grade=item.get('recognition_review','machine_unreviewed');review_counts[grade]=review_counts.get(grade,0)+1
+ auto_review=bool(review_counts) and all(g in ('subtitle_assisted_unreviewed','audio_punctuation_checked','publisher_text') for g in review_counts)
+ summary={'document_generated':True,'path':str(path.resolve()),'count':len(rows),'accounts':names,'pending':pending,'pending_count':len(pending),'cloud_sharing_enabled':bool(config.get('wps',{}).get('enabled')),'source':'provided_records' if explicit else 'local_collection_database','review_status':'automatic_review' if auto_review else 'unreviewed_draft','review_counts':review_counts,'works':[{'account_id':k[0],'id':k[1]} for k in rows]}
  if not explicit and not config.get('wps',{}).get('enabled'):
   for entry in summary['works']:
    service.store.execute("UPDATE works SET status='exported_local' WHERE account_id=? AND id=? AND status='ready_to_archive'",(entry['account_id'],entry['id']))

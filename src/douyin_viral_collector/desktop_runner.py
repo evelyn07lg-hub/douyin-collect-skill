@@ -21,6 +21,7 @@ class DesktopRunner:
         if self.cancelled.is_set():
             raise RuntimeError('操作已取消')
         env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUTF8='1')
+        env['COLLECT_PROGRESS']='1'
         env['PYTHONPATH']=str(self.root/'src')+os.pathsep+env.get('PYTHONPATH','')
         command = [str(self.python), '-u', *map(str, args)]
         self.process = subprocess.Popen(command, cwd=self.root, env=env,
@@ -35,6 +36,9 @@ class DesktopRunner:
                 self.emit({'kind': 'log', 'text': line.rstrip()})
                 try:
                     item = json.loads(line)
+                    if isinstance(item,dict) and item.get('event')=='progress':
+                        self.emit({'kind':'stage','text':item['message']})
+                        continue
                     if isinstance(item, dict) and 'ok' in item:
                         answer = item
                 except ValueError:
@@ -71,7 +75,10 @@ class DesktopRunner:
     def prepare(self):
         from .environment_setup import choose_runtime,requirements
         self.emit({'kind':'stage','text':'检测已有依赖和可复用的 Python 环境'})
-        needed=requirements(self.config());self.python,missing=choose_runtime(self.root,sys.executable,needed)
+        check_config=self.config()
+        if getattr(self,'_review_requested',False):check_config.setdefault('proofreading',{})['enabled']=True
+        phase=getattr(self,'_phase','collect');features=['core'] if phase=='export' else ['core','browser'] if phase=='login' else None
+        needed=requirements(check_config,features=features);self.python,missing=choose_runtime(self.root,sys.executable,needed)
         if not missing:
             self.emit({'kind':'stage','text':'依赖已就绪，跳过安装'})
             return
@@ -103,17 +110,25 @@ class DesktopRunner:
         path = self.root / 'config.json'
         return json.loads(path.read_text(encoding='utf-8-sig')) if path.is_file() else {}
 
-    def start(self, profiles, minimum, strict=False, output_dir='exports', model='small', login_only=False, browser='edge'):
+    def start(self, profiles, minimum, strict=False, output_dir='exports', model='small', login_only=False, browser='edge', review=True, image_mode='published_copy'):
         urls, minimum = self.validate(profiles, minimum)
         if model not in ('small', 'large-v3-turbo'):
             raise ValueError('不支持的本地识别模型。')
         self.cancelled.clear()
+        self._review_requested=review
+        self._phase='login' if login_only else 'collect'
         self.prepare()
         if browser not in ('edge','chrome'):raise ValueError('请选择 Edge 或 Chrome')
         selected=self.config()
         if not selected:
             selected=json.loads((self.root/'config.example.json').read_text(encoding='utf-8-sig'))
         selected['browser']=browser
+        selected.setdefault('collection',{})['image_mode']=image_mode
+        selected.setdefault('proofreading',{})['enabled']=bool(review)
+        selected['proofreading'].setdefault('video_subtitles',{})['enabled']=bool(review)
+        selected['proofreading']['caption_policy']='prefer'
+        selected['proofreading']['video_subtitles']['sample_fps']=2
+        selected.setdefault('word_export',{})['review_required']=bool(review)
         if selected:(self.root/'config.json').write_text(json.dumps(selected,ensure_ascii=False,indent=2),encoding='utf-8')
         self.emit({'kind': 'stage', 'text': '保存账号和整理条件'})
         args = ['-m', 'douyin_viral_collector.cli', 'setup', '--min-likes', minimum, '--output-dir', output_dir]
@@ -132,6 +147,17 @@ class DesktopRunner:
         if not login_only and not (self.root / config['model'] / 'model.bin').is_file():
             self.emit({'kind': 'stage', 'text': '首次下载识别模型，此步骤可能需要较长时间'})
             self._command(['scripts/download-model.py', '--model', model])
+        if review and not login_only:
+            from .quality_setup import punctuation_model
+            self.emit({'kind':'stage','text':'检查自动断句组件'})
+            punctuation=punctuation_model(self.root,sys.executable)
+            if punctuation is None:
+                self.emit({'kind':'stage','text':'首次准备标点模型，已有模型将自动复用'})
+                self._command(['scripts/download-punctuation.py'])
+                punctuation=punctuation_model(self.root,sys.executable)
+            if punctuation is None:raise RuntimeError('标点模型未准备完成，请查看运行记录')
+            config.setdefault('proofreading',{})['punctuation_model']=str(punctuation)
+            (self.root/'config.json').write_text(json.dumps(config,ensure_ascii=False,indent=2),encoding='utf-8')
         known = config.get('public_profiles', [])
         if login_only or not known or not all(p.get('name_verified') for p in known):
             self.emit({'kind': 'stage', 'text': '请在浏览器完成抖音登录，再点击“登录完成，继续”'})
@@ -141,10 +167,12 @@ class DesktopRunner:
             return {}
         self.emit({'kind': 'stage', 'text': '正在采集和识别，较长视频需要更多时间'})
         result = self._command(['-m', 'douyin_viral_collector.cli', 'organize'])
-        self.emit({'kind': 'export', **result.get('word', {})})
+        monitor=result.get('monitor',{});profiles=monitor.get('profiles',[])
+        self.emit({'kind': 'export', **result.get('word', {}), 'scan_observed':sum(p.get('observed',0) for p in profiles),'scan_total':sum(p.get('displayed_total',0) or 0 for p in profiles),'scan_partial':monitor.get('monitor')!='browser_verified'})
         return result
 
     def export(self):
+        self._phase='export'
         self.cancelled.clear()
         if not (self.root / 'config.json').is_file():
             raise ValueError('请先填写账号并开始首次整理。')
@@ -154,11 +182,17 @@ class DesktopRunner:
         return result
 
     def bind_and_process(self, work_id, filename):
+        self._phase='collect'
         self.cancelled.clear()
         self.prepare()
         self._command(['-m', 'douyin_viral_collector.cli', 'bind-media', '--work-id', work_id, '--file', filename])
         self.emit({'kind': 'stage', 'text': '正在识别关联的原视频'})
         self._command(['-m', 'douyin_viral_collector.cli', 'process', '--retry'])
+        return self.export()
+
+    def use_description(self,work_id):
+        self.cancelled.clear();self._phase='export';self.prepare()
+        self._command(['-m','douyin_viral_collector.cli','use-description','--work-id',work_id,'--confirm-no-speech'])
         return self.export()
 
     def items(self):
@@ -170,6 +204,7 @@ class DesktopRunner:
         try:
             connection.row_factory = sqlite3.Row
             rows = connection.execute('SELECT id,payload,likes,status FROM works ORDER BY checked_at DESC').fetchall()
+            candidates=connection.execute('SELECT id,payload,error,detail_status FROM browser_candidates WHERE detail_status IS NULL OR detail_status!=?',('verified',)).fetchall() if connection.execute("SELECT 1 FROM sqlite_master WHERE name='browser_candidates'").fetchone() else []
         finally:
             connection.close()
         items = []
@@ -180,5 +215,11 @@ class DesktopRunner:
             item = json.loads(row['payload'])
             items.append({'id': row['id'], 'account': item.get('account_name', ''),
                 'date': item.get('published_at', ''), 'title': item.get('title', ''),
-                'likes': row['likes'], 'status': row['status']})
+                'url':item.get('url'),'likes': item.get('likes_display') if item.get('likes_exact') is False else row['likes'], 'status': row['status']})
+        known={r['id'] for r in rows}
+        for row in candidates:
+            if row['id'] in known:continue
+            work=json.loads(row['payload']);likes=work.get('likes_exact_display')
+            if likes is not None and likes<threshold:continue
+            items.append({'id':row['id'],'account':work.get('account_name',''),'date':'待核验','title':work.get('description') or '无发布文案作品（待核验）','url':work.get('url'),'likes':likes if likes is not None else '待核验','status':'excluded_other_author' if row['detail_status']=='excluded_other_author' else 'detail_review_required'})
         return items

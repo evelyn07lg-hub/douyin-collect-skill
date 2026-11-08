@@ -69,3 +69,9 @@ class AuthorizedSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory,patch.dict(sys.modules,{'av':types.SimpleNamespace()}):
             ctx=Mock();value=save_visible_audio(ctx,{'account_id':'a','id':'1'},{},[],Path(directory))
             self.assertEqual(value['status'],'waiting_media');ctx.request.get.assert_not_called()
+class NoPolicyThresholdTests(unittest.TestCase):
+ def test_low_like_work_does_not_trigger_media_acquisition(self):
+  from douyin_viral_collector.append_policy import eligible
+  self.assertEqual(eligible({'likes':4},None,{'threshold':29}),(False,'below_threshold'))
+  self.assertTrue(eligible({'likes':30},None,{'threshold':29})[0])
+  self.assertFalse(eligible({'likes':30},None,{'threshold':30})[0])

@@ -55,28 +55,48 @@ def align(caption,chars,times,start,end,cursor):
 
 
 def repair_ocr_confusions(caption,spoken,library):
-    """Resolve visually confused characters only with spoken and lexical support."""
+    """Repair short glyph/phonetic errors only with spoken and common-word support."""
     import jieba
+    jieba.initialize()
     text=lexical(caption);audio=lexical(spoken);positions=[i for i,c in enumerate(caption) if c.isalnum()]
-    anchors=[b for b in difflib.SequenceMatcher(None,text,audio,autojunk=False).get_matching_blocks() if b.size>=2]
+    anchors=[v for v in difflib.SequenceMatcher(None,text,audio,autojunk=False).get_matching_blocks() if v.size>=2]
     if anchors:
-        anchor=max(anchors,key=lambda block:block.size)
-        offset=max(0,anchor.b-anchor.a);audio=audio[offset:offset+len(text)]
-    changes=[]
+        anchor=max(anchors,key=lambda block:block.size);offset=max(0,anchor.b-anchor.a);audio=audio[offset:offset+len(text)]
+    changes=[];shapes={frozenset(x) for x in ['日目','己已','未末','土士','候侯','遍逼','才打']}
     for op,a,b,c,d in difflib.SequenceMatcher(None,text,audio,autojunk=False).get_opcodes():
         if op!='replace' or b-a!=1 or d-c!=1:continue
-        if frozenset((text[a],audio[c])) not in [frozenset(x) for x in ['日目','己已','未末','土士','候侯']]:continue
-        old=text[max(0,a-3):min(len(text),b+3)];relative=min(3,a)
-        new=old[:relative]+audio[c]+old[relative+1:]
-        valid_old=any(len(w)>=2 and lo<=relative<hi and (jieba.get_FREQ(w) or 0)>=20 for w,lo,hi in jieba.tokenize(old))
-        supported=[w for w,lo,hi in jieba.tokenize(new) if len(w)>=2 and lo<=relative<hi and (jieba.get_FREQ(w) or 0)>=20]
-        if valid_old or not supported:continue
-        corroborated=bool(library and any(w in library.text for w in supported))
-        if not corroborated and not any((jieba.get_FREQ(w) or 0)>=1000 for w in supported):continue
-        offset=positions[a];changes.append({'start':offset,'end':offset+1,'before':caption[offset],
-            'after':audio[c],'method':'ocr_shape_audio_and_context','reference_supported':corroborated})
+        old_char,new_char=text[a],audio[c]
+        if not all('\u4e00'<=v<='\u9fff' for v in (old_char,new_char)):continue
+        if any(v in '今明昨前年月日时周一二三四五六七八九十百千万亿我你他她它这那谁哪不没未无' for v in (old_char,new_char)) and frozenset((old_char,new_char)) not in shapes:continue
+        phonetic=difflib.SequenceMatcher(None,sound(old_char),sound(new_char)).ratio()
+        if frozenset((old_char,new_char)) not in shapes and phonetic<.75:continue
+        lo=max(0,a-4);hi=min(len(text),b+4);old=text[lo:hi];relative=a-lo;new=old[:relative]+new_char+old[relative+1:]
+        def words(value):
+            return [value[x:y] for x in range(max(0,relative-3),relative+1) for y in range(relative+1,min(len(value),x+4)+1) if y-x>=2 and (jieba.get_FREQ(value[x:y]) or 0)>=20]
+        old_words=words(old);new_words=words(new)
+        known_misspelling=any(x in old and old.index(x)<=relative<old.index(x)+len(x) for x in ('自已',))
+        if old_words and not known_misspelling:continue
+        if not new_words:continue
+        if library and old in library.text and new not in library.text:continue
+        supported=any((jieba.get_FREQ(w) or 0)>=500 or (library and w in library.text) for w in new_words)
+        if not supported:continue
+        pos=positions[a];changes.append({'start':pos,'end':pos+1,'before':caption[pos],'after':new_char,'method':'ocr_audio_and_common_word_context','reference_supported':bool(library and any(w in library.text for w in new_words)),'context_inference':True})
     for change in reversed(changes):caption=caption[:change['start']]+change['after']+caption[change['end']:]
     return caption,changes
+
+
+def trim_unspoken_visual_edges(caption,spoken):
+    query=lexical(caption);audio=lexical(spoken)
+    if not audio:return caption,None
+    blocks=[b for b in difflib.SequenceMatcher(None,query,audio,autojunk=False).get_matching_blocks() if b.size>=2]
+    if not blocks or sum(b.size for b in blocks)<len(audio)*.6:return caption,None
+    start=min(b.a for b in blocks);end=max(b.a+b.size for b in blocks)
+    removed=query[:start]+query[end:]
+    if len(removed)<4:return caption,None
+    interface_text=bool(re.search(r'评价内容|主评|一星|二星|三星|四星|五星',removed))
+    if not interface_text and (len(query)<=len(audio)*1.5+6 or len(removed)<8):return caption,None
+    positions=[i for i,c in enumerate(caption) if c.isalnum()];trimmed=caption[positions[start]:positions[end-1]+1]
+    return trimmed,{'before':caption,'after':trimmed,'method':'visual_edges_outside_spoken_alignment','raw_caption_preserved':True}
 
 
 def repair_reference_audio_phrases(caption,spoken,library,protected_terms=()):
@@ -114,11 +134,16 @@ def reconcile(asr,subtitles,library=None,minimum_coverage=.75,ocr_corrections=()
     cues=subtitles['cues']
     for index,cue in enumerate(cues):
         match=align(cue['text'],chars,times,cue['start'],cue['end'],cursor)
-        fallback=False
+        fallback=False;visual_change=None;candidate=cue['text']
+        if match:
+            candidate,visual_change=trim_unspoken_visual_edges(candidate,''.join(chars[match['start']:match['end']]))
+            if visual_change:match=align(candidate,chars,times,cue['start'],cue['end'],cursor)
         if not match or match['error']>.62:
             if (cue['confidence']>=.9 and cue.get('samples',1)>=2) or (cue['confidence']>=.8 and cue.get('samples',1)>=4):
                 lo=max(cursor,bisect.bisect_left(times,max(0,cue['start']-.2)))
                 hi=max(lo,bisect.bisect_right(times,cue['end']+.2))
+                if hi-lo<3 or len(lexical(candidate))>max(12,(hi-lo)*1.7+3):
+                    decisions.append({'caption':cue,'decision':'unsupported_visual_text','audio_match':match});continue
                 match={'start':lo,'end':hi,'error':None,'audio':''.join(chars[lo:hi])}
                 fallback=True
             else:
@@ -130,7 +155,8 @@ def reconcile(asr,subtitles,library=None,minimum_coverage=.75,ocr_corrections=()
             gap=''.join(chars[k] for k in range(cursor,a) if not any(v['start']-.15<=times[k]<=v['end']+.15 for v in accepted_intervals+[cue]));changes=[]
             if library:gap,changes=library.correct(gap)
             parts.append({'source':'asr_gap','text':gap,'start':times[cursor], 'end':times[a-1], 'reference_changes':changes})
-        chosen,changes=repair_ocr_confusions(cue['text'], ''.join(chars[max(0,a-4):min(len(chars),b+4)]),library)
+        chosen,changes=repair_ocr_confusions(candidate, ''.join(chars[a:b]),library)
+        if visual_change:changes.append(visual_change)
         context=(cues[index-1]['text'] if index else '')+chosen+(cues[index+1]['text'] if index+1<len(cues) else '')
         protected_terms=[]
         for rule in ocr_corrections:

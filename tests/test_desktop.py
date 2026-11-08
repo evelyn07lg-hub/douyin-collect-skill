@@ -14,8 +14,9 @@ class DesktopWorkflowTests(unittest.TestCase):
             'public_profiles':[{'sec_uid':'example','name':'示例','name_verified':False}],
             'wps':{'enabled':True,'url':'private-target'},'word_export':{'enabled':True}}
         (self.root/'config.json').write_text(json.dumps(self.config),encoding='utf-8')
+        self.quality_patch=patch('douyin_viral_collector.quality_setup.punctuation_model',return_value=self.root/'ct-punc');self.quality_patch.start()
         self.model=self.root/'models/faster-whisper-small/model.bin';self.model.parent.mkdir(parents=True);self.model.write_bytes(b'fixture')
-    def tearDown(self):self.tmp.cleanup()
+    def tearDown(self):self.quality_patch.stop();self.tmp.cleanup()
     def test_independent_flow_orders_login_before_collection_and_preserves_explicit_cloud_setting(self):
         calls=[]
         def command(args,login=False):

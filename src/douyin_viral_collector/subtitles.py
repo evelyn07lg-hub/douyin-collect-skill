@@ -1,3 +1,4 @@
+from .caption_layout import side_text_indices
 """Read visible burned-in captions from complete, explicitly mapped video media."""
 import hashlib
 import json
@@ -7,7 +8,7 @@ from collections import Counter,defaultdict
 from pathlib import Path
 from .media import media_paths
 
-VERSION='visible-subtitles-v1'
+VERSION='visible-subtitles-v2-layout'
 
 
 def video_info(path):
@@ -133,7 +134,8 @@ def browser_caption_evidence(work,root):
         raise ValueError('Browser caption evidence belongs to another work')
     if not data.get('capture_complete') or data.get('decoded_through',0)<data.get('duration',0)-2/data.get('sample_fps',2):
         return None
-    return regroup(data)
+    from .caption_layout import refine_cached_layout
+    return regroup(refine_cached_layout(data,root,work['id'],path))
 
 
 def extract_subtitles(work,root,settings,progress=None):
@@ -174,9 +176,10 @@ def extract_subtitles(work,root,settings,progress=None):
             crop=image[int(top*h):int(bottom*h),int(left*w):int(right*w)]
             if crop.shape[1]<800:
                 crop=cv2.resize(crop,None,fx=1.5,fy=1.5,interpolation=cv2.INTER_CUBIC)
-            results,_=engine(crop);boxes=[]
+            results,_=engine(crop);results=results or [];boxes=[];excluded=side_text_indices(results,crop.shape[1])
             ch,cw=crop.shape[:2]
-            for box,text,confidence in results or []:
+            for recognized_index,(box,text,confidence) in enumerate(results):
+                if recognized_index in excluded:continue
                 xs=[p[0] for p in box];ys=[p[1] for p in box]
                 if confidence<float(settings.get('min_ocr_confidence',.8)) or not key(text):continue
                 if (max(ys)-min(ys))/ch<.028 or (max(xs)-min(xs))/cw<.035:continue

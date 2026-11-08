@@ -31,7 +31,7 @@ def statistic(value):
     if value is None or isinstance(value, bool):
         return '待获取'
     text = str(value).strip()
-    return text if re.fullmatch(r'\d+(?:,\d{3})*(?:\.\d+)?[万亿wWkK]?', text) else '待获取'
+    return text if re.fullmatch(r'\d+(?:,\d{3})*(?:\.\d+)?[万亿wWkK]?\+?', text) else '待获取'
 
 
 
@@ -54,7 +54,7 @@ def format_paragraphs(body, target_length=200):
 
 
 def render_entry(row, work):
-    header = (f"{publication_date(work.get('published_at'))}，点赞{statistic(row.get('likes'))} "
+    header = (f"{publication_date(work.get('published_at'))}，点赞{statistic(work.get('likes_display') if work.get('likes_exact') is False else row.get('likes'))} "
               f"评论{statistic(work.get('comments'))} 收藏{statistic(work.get('favorites'))} "
               f"分享{statistic(work.get('shares'))}；")
     kind = work.get('video_type') or ('图文' if work.get('type') == 'image' else '口播视频')

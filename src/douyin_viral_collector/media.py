@@ -38,7 +38,7 @@ def model_is_ready(directory):
 
 def published_copy(work):
     """Use complete publisher text only when absence of spoken content is confirmed."""
-    if not work.get('no_spoken_confirmed') or not work.get('description_complete'):
+    if not (work.get('no_spoken_confirmed') or (work.get('type')=='image' and work.get('image_copy_requested'))) or not work.get('description_complete'):
         raise ValueError('Complete published copy and confirmed no-spoken status are required')
     raw = str(work.get('description', '')).strip()
     if not raw:
@@ -49,7 +49,7 @@ def published_copy(work):
     if not body:
         body = raw
     return {'raw': raw, 'body': body, 'source': 'published_description',
-            'no_spoken_confirmed': True, 'human_reviewed': False}
+            'no_spoken_confirmed': bool(work.get('no_spoken_confirmed')), 'human_reviewed': False}
 
 
 def media_paths(work, root):
@@ -82,7 +82,7 @@ def extract(work, root, model):
     if not isinstance(vocabulary, list) or any(not isinstance(v, str) for v in vocabulary):
         raise ValueError('asr_vocabulary must be a list of words')
     prompt = '简体中文口语。' + ('相关词汇：' + '、'.join(vocabulary) if vocabulary else '')
-    digest = hashlib.sha256(('recognition-v4-timed-words:' + model + work.get('type', 'video') + prompt).encode())
+    digest = hashlib.sha256(('recognition-v5-language-confidence:' + model + work.get('type', 'video') + prompt).encode())
     manifest = Path(model) / 'download-manifest.json'
     if work.get('type') != 'image' and manifest.is_file():
         digest.update(manifest.read_bytes())
@@ -112,13 +112,13 @@ def extract(work, root, model):
             subprocess.run([ffmpeg_executable(), '-nostdin', '-v', 'error', '-i', str(paths[0]), '-vn',
                             '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], check=True, capture_output=True, timeout=600)
             engine = WhisperModel(model, device='cpu', compute_type='int8', local_files_only=True, cpu_threads=min(4, os.cpu_count() or 1))
-            segments, info = engine.transcribe(read_pcm_audio(wav), language='zh', vad_filter=True, beam_size=5, condition_on_previous_text=True, initial_prompt=prompt, word_timestamps=True)
-            timed_segments = [{'start': s.start, 'end': s.end, 'text': s.text.strip(),
+            segments, info = engine.transcribe(read_pcm_audio(wav), language=work.get('asr_language') or None, vad_filter=True, beam_size=5, condition_on_previous_text=True, initial_prompt=prompt, word_timestamps=True)
+            timed_segments = [{'start': s.start, 'end': s.end, 'text': s.text.strip(),'avg_logprob':s.avg_logprob,'no_speech_prob':s.no_speech_prob,'compression_ratio':s.compression_ratio,
                                'words': [{'start': w.start, 'end': w.end, 'word': w.word, 'probability': w.probability}
                                          for w in (s.words or [])]} for s in segments]
             raw = '\n'.join(s['text'] for s in timed_segments)
             timing = {'duration_seconds': info.duration, 'speech_duration_seconds': info.duration_after_vad,
-                      'segments': timed_segments, 'recognizer': 'faster-whisper', 'model': str(model), 'human_reviewed': False}
+                      'segments': timed_segments,'language':info.language,'language_probability':info.language_probability, 'recognizer': 'faster-whisper', 'model': str(model), 'human_reviewed': False}
     if not raw.strip():
         raise ValueError('empty recognition result; review original media')
     # Conservative normalization only; no rewriting or paid LLM calls.

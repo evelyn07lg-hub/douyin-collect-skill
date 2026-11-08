@@ -11,7 +11,7 @@ def ensure_baseline(store):
 
 def eligible(work,store,config):
     policy=config.get('append_policy')
-    if not policy:return True,'no_future_only_policy'
+    if not policy:return (True,'no_future_only_policy') if work.get('likes',0)>config['threshold'] else (False,'below_threshold')
     ensure_baseline(store)
     threshold=config['threshold']
     try:

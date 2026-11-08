@@ -111,6 +111,48 @@ class ReferenceLibrary:
         return text, changes
 
 
+def project_spoken_punctuation(spoken,body):
+    """Retain narration pauses across subtitle character corrections, without changing words."""
+    import difflib
+    source=lexical(spoken);target=lexical(body)
+    if not source or not target:return body,{}
+    mapping={0:0,len(source):len(target)};matched=0
+    for op,a,b,c,d in difflib.SequenceMatcher(None,source,target,autojunk=False).get_opcodes():
+        mapping[a]=c;mapping[b]=d
+        if op=='equal':
+            matched+=b-a
+            for offset in range(b-a+1):mapping[a+offset]=c+offset
+    if matched/max(len(source),len(target))<.65:return body,{}
+    marks={};position=0;normalize={',':'，','.':'。','?':'？','!':'！',';':'；',':':'：'}
+    for index,char in enumerate(spoken):
+        if char.isalnum():position+=1;continue
+        if char not in '，。？！；：,.?!;:':continue
+        if index and index+1<len(spoken) and spoken[index-1].isdigit() and spoken[index+1].isdigit():continue
+        if position in mapping:marks[mapping[position]]=normalize.get(char,char)
+    if not marks:return body,{}
+    strong='。？！；';output=[];position=0;applied=set();index=0
+    while index<len(body):
+        char=body[index]
+        if char.isalnum():
+            output.append(char);position+=1
+            next_index=index+1;following=''
+            while next_index<len(body) and not body[next_index].isalnum():following+=body[next_index];next_index+=1
+            preferred=marks.get(position)
+            if preferred and not (next_index<len(body) and char.isdigit() and body[next_index].isdigit()):
+                existing=next((v for v in following if v in '，。？！；：'),None)
+                chosen=existing if preferred=='，' and existing and existing in strong else preferred
+                following=''.join(v for v in following if v not in '，。？！；：,.?!;:')
+                output.append(chosen+following);applied.add(position)
+            else:
+                if any(v in strong for v in following) and any(0<abs(position-p)<=3 for p in marks):following=''.join(v for v in following if v not in strong)
+                output.append(following)
+            index=next_index
+        else:output.append(char);index+=1
+    result=''.join(output)
+    if lexical(result)!=target:raise ValueError('Pause restoration changed spoken words')
+    return result,{'method':'spoken_pause_alignment','matched_character_ratio':matched/max(len(source),len(target)),'projected_boundaries':len(applied)}
+
+
 class Proofreader:
     def __init__(self, settings, base):
         self.settings = settings
@@ -150,15 +192,29 @@ class Proofreader:
                 # Existing punctuation is retained when already reasonably punctuated.
                 marks = sum(c in '，。！？；：,!?;' for c in corrected)
                 sentences = sum(c in '。！？!?' for c in corrected)
-                if marks/max(1,len(lexical(corrected))) < .025 or (len(corrected)>180 and sentences/max(1,len(lexical(corrected))) < 1/180):
+                if result.get('subtitle_primary') or (sentences==0 and len(lexical(corrected))>35) or marks/max(1,len(lexical(corrected))) < .025 or (len(corrected)>180 and sentences/max(1,len(lexical(corrected))) < 1/180):
                     unpunctuated = re.sub(r'[，。！？；：!?;]|(?<![0-9]),|,(?![0-9])', '', corrected)
                     punctuated, _ = self.punctuator(unpunctuated)
                     if lexical(punctuated) != lexical(corrected):
                         raise ValueError('Punctuation restoration changed spoken words')
                     corrected = punctuated
+            # Remove unmatched OCR quote marks rather than inventing a quoted span.
+            unmatched=[];stack=[]
+            for index,char in enumerate(corrected):
+                if char=='“':stack.append(index)
+                elif char=='”':
+                    if stack:stack.pop()
+                    else:unmatched.append(index)
+            unmatched.extend(stack)
+            if unmatched:
+                corrected=''.join(char for index,char in enumerate(corrected) if index not in set(unmatched))
+                changes.append({'method':'remove_unmatched_ocr_quotes','positions':unmatched})
             output.append(corrected.strip())
             evidence.append({'corrections': changes})
         cleaned = '\n'.join(output)
+        if result.get('subtitle_primary'):
+            cleaned,pause_evidence=project_spoken_punctuation(result.get('raw',''),cleaned)
+            if pause_evidence:evidence.append(pause_evidence)
         if result.get('subtitle_primary'):
             sentences=re.split(r'(?<=[。！？])', cleaned)
             paragraphs=[];paragraph=''
@@ -168,6 +224,12 @@ class Proofreader:
             if paragraph:paragraphs.append(paragraph)
             cleaned='\n'.join(paragraphs)
 
+        # Restore Latin tokens when punctuation models split an actually spoken word.
+        for token in set(re.findall(r'[A-Za-z]{3,}',result.get('raw','')+' '+result.get('body',''))):
+            pattern=r'[，,。.!！?？、;；:：\s]*'.join(map(re.escape,token))
+            cleaned=re.sub(r'(?<![A-Za-z])'+pattern+r'(?![A-Za-z])',token,cleaned,flags=re.I)
+
+        cleaned=re.sub(r'([，。！？；：])”',r'”\1',cleaned)
         ending = self.settings.get('english_ending', '')
         aliases = self.settings.get('ending_aliases', [])
         if ending and aliases:

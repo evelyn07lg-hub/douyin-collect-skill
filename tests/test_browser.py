@@ -120,3 +120,18 @@ class BrowserTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+class HomepageCoCreationTests(unittest.TestCase):
+ def test_homepage_membership_accepts_co_created_work(self):
+  card={'id':'123','url':'https://www.douyin.com/video/123','account_id':'douyin-public:owner','profile_card_verified':True,'profile_url':'https://www.douyin.com/user/owner'}
+  detail={'url':card['url'],'author_urls':['https://www.douyin.com/user/coauthor'],'work_id':'123','likes_display':'305','description':'共创作品','published_at':'2026-09-02','expand_remaining':False}
+  result=validate_detail(card,detail,allow_homepage_coauthored=True);self.assertTrue(result['homepage_coauthored']);self.assertEqual(result['account_id'],'douyin-public:owner');self.assertEqual(result['detail_author_urls'],detail['author_urls'])
+  with self.assertRaises(ValueError):validate_detail(dict(card,profile_card_verified=False),detail,allow_homepage_coauthored=True)
+  with self.assertRaises(ValueError):validate_detail(card,dict(detail,work_id='456'),allow_homepage_coauthored=True)
+
+class ApproximateLikeThresholdTests(unittest.TestCase):
+ def test_safe_interval_does_not_invent_exact_count(self):
+  from douyin_viral_collector.browser import count_interval
+  lower,upper=count_interval('2.3万');self.assertLess(lower,23000);self.assertGreater(upper,23000)
+  card={'id':'1','url':'https://www.douyin.com/video/1','account_id':'douyin-public:owner'};detail={'url':card['url'],'work_id':'1','author_urls':['https://www.douyin.com/user/owner'],'likes_display':'2.3万','description':'标题','published_at':'2026-11-08','expand_remaining':False}
+  result=validate_detail(card,detail,threshold=500);self.assertFalse(result['likes_exact']);self.assertEqual(result['likes_display'],'2.3万');self.assertGreater(result['likes'],500)
+  with self.assertRaises(ValueError):validate_detail(card,detail,threshold=23000)

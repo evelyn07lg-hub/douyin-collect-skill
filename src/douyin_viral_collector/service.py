@@ -7,6 +7,7 @@ from pathlib import Path
 from .storage import Store, lock
 from .media import extract, published_copy
 from .wps import LocalArchive
+from .progress import progress
 
 
 def now():
@@ -94,11 +95,13 @@ class Service:
     def process(self, retry=False):
         # Under OS lock, any processing state is from an interrupted previous run.
         self.store.execute("UPDATE works SET status='discovered' WHERE status='processing'")
-        statuses = "'discovered','waiting_media','waiting_subtitles'" + (",'failed'" if retry else '')
+        statuses = "'discovered','waiting_media','waiting_subtitles','waiting_review'" + (",'failed'" if retry else '')
         rows = self.store.rows(f'SELECT * FROM works WHERE likes>? AND status IN ({statuses})', (self.config['threshold'],))
-        result = {'ready': 0, 'waiting_media': 0, 'waiting_subtitles': 0, 'failed': 0}
+        progress(f'待处理正文：{len(rows)} 篇')
+        result = {'ready': 0, 'waiting_media': 0, 'waiting_subtitles': 0,'waiting_review':0, 'failed': 0}
         proofreader = None
-        for row in rows:
+        for item_index,row in enumerate(rows,1):
+            progress(f'正在识别与校对正文 {item_index}/{len(rows)}')
             args = (row['account_id'], row['id'])
             self.store.execute("UPDATE works SET status='processing',attempts=attempts+1 WHERE account_id=? AND id=?", args)
             try:
@@ -127,15 +130,24 @@ class Service:
                         if captions.get('enabled'):
                             from .subtitles import extract_subtitles
                             from .transcript_fusion import reconcile
-                            subtitles = extract_subtitles(work, self.root, captions)
+                            subtitles = extract_subtitles(work, self.root, captions,lambda v:progress(f"正在读取作者字幕：{v.get('seconds',0)}/{v.get('duration',0)} 秒"))
                             (raw_dir/'raw-video-subtitles.json').write_text(json.dumps(subtitles,ensure_ascii=False,indent=2),encoding='utf-8')
+                            fallback=False
                             if subtitles['status'] != 'extracted':
-                                self.store.execute("UPDATE works SET status='waiting_subtitles',error=? WHERE account_id=? AND id=?",(subtitles.get('reason',subtitles['status']),*args))
-                                result['waiting_subtitles'] += 1
-                                continue
-                            text = reconcile(text, subtitles, library=proofreader.library,
-                                             minimum_coverage=float(captions.get('minimum_coverage',.75)),
-                                             ocr_corrections=captions.get('reviewed_ocr_corrections',[]))
+                                if settings.get('caption_policy')=='prefer' and subtitles['status']=='insufficient_captions':fallback=True
+                                else:
+                                    self.store.execute("UPDATE works SET status='waiting_subtitles',error=? WHERE account_id=? AND id=?",(subtitles.get('reason',subtitles['status']),*args));result['waiting_subtitles']+=1;continue
+                            else:
+                                try:
+                                    text=reconcile(text,subtitles,library=proofreader.library,minimum_coverage=float(captions.get('minimum_coverage',.75)),ocr_corrections=captions.get('reviewed_ocr_corrections',[]))
+                                except ValueError as alignment_error:
+                                    if settings.get('caption_policy')!='prefer':raise
+                                    fallback=True;text['visual_text_alignment_issue']=str(alignment_error)
+                            if fallback:
+                                from .audio_quality import audio_quality
+                                evidence=audio_quality(text);text['audio_review']=evidence
+                                if not evidence['accepted']:
+                                    self.store.execute("UPDATE works SET status='waiting_review',error=? WHERE account_id=? AND id=?",('；'.join(evidence['reasons']),*args));result['waiting_review']+=1;continue
                         text = proofreader.process(text)
                     transcript_dir = self.root / 'transcripts' / marker(*args).split(':')[1]
                     transcript_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +157,8 @@ class Service:
                         target = transcript_dir / filename
                         temp = target.with_suffix('.tmp'); temp.write_text(content, encoding='utf-8'); temp.replace(target)
                     payload = json.loads(row['payload'])
-                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'subtitle_assisted_unreviewed' if text.get('subtitle_primary') else 'reference_assisted_unreviewed' if text.get('proofreading') else 'machine_unreviewed'
+                    payload['recognition_review'] = 'publisher_text' if text.get('source') == 'published_description' else 'subtitle_assisted_unreviewed' if text.get('subtitle_primary') else 'audio_punctuation_checked' if text.get('audio_review',{}).get('accepted') and text.get('proofreading') else 'reference_assisted_unreviewed' if text.get('proofreading') else 'machine_unreviewed'
+                    payload['recognition_pipeline_version'] = 2
                     payload['recognition_evidence'] = str(transcript_dir / 'recognition.json')
                     self.store.execute("UPDATE works SET status='ready_to_archive',raw=?,body=?,payload=?,error=NULL WHERE account_id=? AND id=?",
                         (text['raw'], text['body'], json.dumps(payload, ensure_ascii=False), *args))
@@ -166,7 +179,7 @@ class Service:
             stale=[]
             for row in rows:
                 payload=json.loads(row['payload'])
-                if payload.get('type','video') == 'video' and payload.get('content_mode') != 'published_copy' and payload.get('recognition_review') != 'subtitle_assisted_unreviewed':
+                if payload.get('type','video') == 'video' and payload.get('content_mode') != 'published_copy' and payload.get('recognition_review') not in (('subtitle_assisted_unreviewed','audio_punctuation_checked') if self.config.get('proofreading',{}).get('caption_policy')=='prefer' else ('subtitle_assisted_unreviewed',)):
                     stale.append(row)
             for row in stale:
                 self.store.execute("UPDATE works SET status='waiting_subtitles',error='Caption reconciliation required' WHERE account_id=? AND id=?",(row['account_id'],row['id']))
@@ -240,13 +253,35 @@ class Service:
                 backup = self.store.get('last_backup', 0)
                 if time.time() - backup > 86400:
                     self.store.backup(); self.store.set('last_backup', time.time())
-                monitored = self.monitor()
+                full_history=bool(self.config.get('word_export',{}).get('enabled') and self.config.get('word_export',{}).get('full_history',True))
+                if full_history:
+                    budget=self.config.setdefault('browser_budgets',{})
+                    budget['max_scrolls']=max(30,budget.get('max_scrolls',0));budget['max_details']=max(100,budget.get('max_details',0))
+                monitored = self.monitor(historical=True) if full_history else self.monitor()
                 from .reference import refresh_reference
                 reference = refresh_reference(self)
+                if self.config.get('proofreading',{}).get('enabled') and self.config.get('proofreading',{}).get('video_subtitles',{}).get('enabled'):
+                    for old in self.store.rows("SELECT * FROM works WHERE status IN ('ready_to_archive','exported_local')"):
+                        payload=json.loads(old['payload'])
+                        if payload.get('type','video')!='video' or payload.get('content_mode')=='published_copy' or (payload.get('recognition_pipeline_version',0)>=2 and payload.get('recognition_review') in (('subtitle_assisted_unreviewed','audio_punctuation_checked') if self.config.get('proofreading',{}).get('caption_policy')=='prefer' else ('subtitle_assisted_unreviewed',))):continue
+                        from .wps import marker
+                        backup_dir=self.root/'transcripts'/marker(old['account_id'],old['id']).split(':')[1];backup_dir.mkdir(parents=True,exist_ok=True)
+                        backup_file=backup_dir/('before-quality-upgrade-'+str(time.time_ns())+'.txt');backup_file.write_text(old['body'] or '',encoding='utf-8')
+                        self.store.execute("UPDATE works SET status='waiting_subtitles' WHERE account_id=? AND id=?",(old['account_id'],old['id']))
                 processed=self.process(retry=True)
                 if self.config.get('word_export',{}).get('enabled'):
                     from .word_export import export_word
-                    word=export_word(self)
+                    word=export_word(self,allow_empty=True)
+                    scans=monitored.get('profiles',[])
+                    verified_scope=bool(scans) and all(p.get('historical_complete') for p in scans) and not monitored.get('issues') and not monitored.get('blocked') and not monitored.get('unverified_count')
+                    word['collection_complete']=verified_scope and not word.get('pending_count')
+                    word['delivery_ready']=word['collection_complete'] and word.get('review_status') in ('automatic_subtitle_review','automatic_review')
+                    word['completion_status']='complete' if word['delivery_ready'] else 'partial'
+                    word['scan_profiles']=scans
+                    word['unverified_works']=monitored.get('unverified_candidates',monitored.get('issues',[]))
+                    word['unverified_count']=len(word['unverified_works'])
+                    report_path=Path(word['report_path'])
+                    report_path.write_text(json.dumps(word,ensure_ascii=False,indent=2),encoding='utf-8')
                     archive=self.archive() if self.config.get('wps',{}).get('enabled') else {'remote':'disabled_by_user','destination':'local_word'}
                     if not self.config.get('wps',{}).get('enabled'):
                         for entry in word['works']:self.store.execute("UPDATE works SET status='exported_local' WHERE account_id=? AND id=? AND status='ready_to_archive'",(entry['account_id'],entry['id']))

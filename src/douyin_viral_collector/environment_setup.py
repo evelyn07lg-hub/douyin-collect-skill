@@ -13,9 +13,9 @@ for text in json.loads(sys.argv[1]):
  if version not in r.specifier:missing.append(text)
 print(json.dumps({'missing':missing,'python':sys.version_info[:3]}))'''
 
-def requirements(config):
- groups=['core','browser','media']
- if config.get('proofreading',{}).get('enabled'):groups.append('proofreading')
+def requirements(config,features=None):
+ groups=features or ['core','browser','media']
+ if config.get('proofreading',{}).get('enabled') and (features is None or 'media' in features):groups.append('proofreading')
  return list(dict.fromkeys(item for group in groups for item in REQUIREMENTS[group]))
 
 def probe(python,needed):

@@ -1,5 +1,5 @@
 """First-run installation and interactive local Word collection."""
-import argparse,json,subprocess,sys,venv
+import argparse,json,subprocess,sys,venv,os
 from pathlib import Path
 
 def main():
@@ -12,7 +12,9 @@ def main():
     from douyin_viral_collector.desktop_runner import DesktopRunner
     runner=DesktopRunner(root,lambda event: print(event.get('text',''),flush=True))
     runner.prepare();python=runner.python
-    def run(*parts):runner._command(list(parts))
+    def run(*parts):
+        env=dict(os.environ,PYTHONPATH=str(root/'src'))
+        subprocess.run([str(python),*parts],cwd=root,env=env,check=True)
     if args.install_only:return
     if not (root/'config.json').is_file():run('-m','douyin_viral_collector.cli','setup')
     config=json.loads((root/'config.json').read_text(encoding='utf-8-sig'))

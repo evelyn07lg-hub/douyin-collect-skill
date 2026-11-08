@@ -23,6 +23,8 @@ def main():
         if cmd == 'import': s.add_argument('file')
     s=sub.add_parser('setup',help='首次配置目标账号和点赞门槛，默认生成本地Word')
     s.add_argument('--profile',action='append',dest='profiles');s.add_argument('--min-likes',type=int);s.add_argument('--strict',action='store_true');s.add_argument('--output-dir')
+    copied=sub.add_parser('use-description',help='确认无口播后按完整发布文案收录')
+    copied.add_argument('--work-id',required=True);copied.add_argument('--confirm-no-speech',action='store_true')
     binding=sub.add_parser('bind-media',help='为待处理作品关联自己的原视频')
     binding.add_argument('--work-id',required=True);binding.add_argument('--file',required=True)
     sub.add_parser('login',help='打开浏览器，登录并核对账号名称')
@@ -35,6 +37,13 @@ def main():
         if command == 'setup':
             from .onboarding import setup
             output={'ok':True,'result':setup(config,**args)}
+        elif command == 'use-description':
+            from .publisher_selection import choose_description
+            from .storage import lock
+            service=Service(config)
+            try:
+                with lock(service.root/'collect.lock'):output={'ok':True,'result':choose_description(service,**args)}
+            finally:service.store.db.close()
         elif command == 'bind-media':
             from .media_binding import bind_media
             from .storage import lock

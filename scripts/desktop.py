@@ -20,7 +20,7 @@ except ImportError:
     raise SystemExit(message)
 from douyin_viral_collector.desktop_runner import DesktopRunner
 
-STATUS = {'discovered': '等待识别', 'processing': '识别中', 'waiting_media': '需要原视频',
+STATUS = {'excluded_other_author':'其他作者作品（已排除）','waiting_review':'正文待复核','detail_review_required':'详情待核验', 'discovered': '等待识别', 'processing': '识别中', 'waiting_media': '需要原视频',
     'waiting_subtitles': '需要字幕画面', 'failed': '待重试', 'ready_to_archive': '可导出',
     'exported_local': '已导出文稿', 'archived': '已归档', 'already_present': '已收录',
     'duplicate_review': '疑似重复，待核对', 'uncertain': '需要核对'}
@@ -119,8 +119,13 @@ class App(tk.Tk):
         self.output = tk.StringVar(value=str(self.project / 'exports'))
         ttk.Entry(output, textvariable=self.output).grid(row=0, column=1, sticky='ew')
         ttk.Button(output, text='选择文件夹', command=self.choose_output).grid(row=0, column=2, padx=(10, 0))
+        quality=ttk.Frame(setup,style='Card.TFrame');quality.grid(row=7,column=0,sticky='w',pady=(12,0))
+        self.review=tk.BooleanVar(value=True)
+        ttk.Checkbutton(quality,text='字幕校对与自动断句（推荐）',variable=self.review).pack(side='left')
+        self.image_mode=tk.StringVar(value='图文：发布文案')
+        ttk.Combobox(quality,state='readonly',values=['图文：发布文案','图文：图片文字'],textvariable=self.image_mode,width=20).pack(side='left',padx=15)
         actions = ttk.Frame(setup, style='Card.TFrame')
-        actions.grid(row=7, column=0, sticky='w', pady=(24, 14))
+        actions.grid(row=8, column=0, sticky='w', pady=(24, 14))
         self.start_button = ttk.Button(actions, text='开始整理并生成文稿', style='Primary.TButton', command=self.start)
         self.start_button.pack(side='left', padx=(0, 10))
         self.login_button = ttk.Button(actions, text='登录 / 重新登录', command=lambda: self.start(True))
@@ -129,14 +134,16 @@ class App(tk.Tk):
         self.export_button.pack(side='left')
         ttk.Button(actions,text='文档与格式设置',command=self.document_settings).pack(side='left',padx=(10,0))
         ttk.Label(setup, text='首次使用自动准备环境和模型。出现登录提示时，在所选浏览器中完成验证，再点击下方继续。',
-            style='Card.TLabel', foreground='#64748b').grid(row=8, column=0, sticky='w', pady=(0, 9))
+            style='Card.TLabel', foreground='#64748b').grid(row=9, column=0, sticky='w', pady=(0, 9))
         ttk.Label(setup, text='默认生成本地自动识别稿；共享文档由博主自行创建和开启。复杂人名、专业词建议复核。',
-            style='Card.TLabel', foreground='#64748b').grid(row=9, column=0, sticky='w')
+            style='Card.TLabel', foreground='#64748b').grid(row=10, column=0, sticky='w')
         toolbar = ttk.Frame(works)
         toolbar.pack(fill='x', pady=(0, 12))
         ttk.Button(toolbar, text='刷新作品列表', command=self.refresh_items).pack(side='left')
         self.bind_button = ttk.Button(toolbar, text='为选中作品关联原视频', command=self.bind_media)
         self.bind_button.pack(side='left', padx=10)
+        ttk.Button(toolbar,text='按发布文案收录',command=self.use_description).pack(side='left',padx=(0,10))
+        ttk.Button(toolbar,text='查看原作品',command=self.open_source).pack(side='left')
         columns = ('account', 'date', 'title', 'likes', 'status')
         self.tree = ttk.Treeview(works, columns=columns, show='headings', selectmode='browse')
         for key, label, width in [('account', '账号', 140), ('date', '发布时间', 150), ('title', '作品', 350),
@@ -172,6 +179,8 @@ class App(tk.Tk):
     def load_config(self):
         try:
             config = self.runner.config()
+            self.review.set(config.get('word_export',{}).get('review_required',True))
+            self.image_mode.set('图文：图片文字' if config.get('collection',{}).get('image_mode')=='image_ocr' else '图文：发布文案')
             self.browser.set('Chrome' if config.get('browser')=='chrome' else 'Edge')
             urls = [p.get('url') or 'https://www.douyin.com/user/' + p['sec_uid'] for p in config.get('public_profiles', [])]
             self.profiles.insert('1.0', '\n'.join(urls))
@@ -190,7 +199,7 @@ class App(tk.Tk):
     def start(self, login_only=False):
         values = dict(profiles=self.profiles.get('1.0', 'end'), minimum=self.minimum.get(),
             strict=self.comparison.get() == '严格超过', output_dir=self.output.get() or 'exports',
-            model='large-v3-turbo' if self.model.get().startswith('精细') else 'small', login_only=login_only, browser=self.browser.get().lower())
+            model='large-v3-turbo' if self.model.get().startswith('精细') else 'small', login_only=login_only, browser=self.browser.get().lower(),review=self.review.get(),image_mode='published_copy' if self.image_mode.get()=='图文：发布文案' else 'image_ocr')
         try:
             self.runner.validate(values['profiles'], values['minimum'])
         except ValueError as exc:
@@ -228,9 +237,12 @@ class App(tk.Tk):
                     self.stage.set('请在所选浏览器中登录或完成验证，再点击“登录完成，继续”。')
                 if kind == 'export':
                     self.last_file = event.get('path')
-                    if self.last_file:
-                        self.open_file_button.configure(state='normal')
-                    self.stage.set(f"已生成文稿：{event.get('count', 0)}篇；待处理：{event.get('pending_count', 0)}篇。")
+                    self.open_file_button.configure(state='normal' if self.last_file else 'disabled')
+                    if event.get('review_status')=='unreviewed_draft':self.events.put({'kind':'log','text':'本次为未完成字幕校对的识别草稿，不能作为最终校对稿交付。'})
+                    text=("整理完成。" if event.get("delivery_ready") else "部分完成，请核对待处理清单。")+f"已出稿 {event.get('count',0)} 篇；待处理 {event.get('pending_count',0)} 篇。"
+                    if 'scan_observed' in event:text+=f"已核验主页 {event['scan_observed']} 条。"+('历史尚未扫描完整。' if event.get('scan_partial') else '')
+                    if event.get('unverified_count'):text+=f"另有 {event['unverified_count']} 篇详情待核验。"
+                    self.stage.set(text)
                 if kind in ('log', 'error'):
                     self.log.configure(state='normal')
                     self.log.insert('end', event.get('text', '') + '\n')
@@ -279,7 +291,7 @@ class App(tk.Tk):
             messagebox.showinfo('选择作品', '请先在列表中选中需要补充原视频的作品。', parent=self)
             return
         item = self.items_by_row[selected[0]]
-        if item['status'] not in ('waiting_media', 'waiting_subtitles', 'failed', 'discovered'):
+        if item['status'] not in ('waiting_media', 'waiting_subtitles','waiting_review', 'failed', 'discovered'):
             messagebox.showinfo('保留现有稿件', '这篇作品不属于待补充素材状态，工作台不会覆盖已有校订。', parent=self)
             return
         file = filedialog.askopenfilename(parent=self, title='选择这篇作品对应的原视频',
@@ -289,24 +301,43 @@ class App(tk.Tk):
 
     def document_settings(self):
         from douyin_viral_collector.document_settings import save_settings,DEFAULTS
-        config=self.runner.config();fmt=dict(DEFAULTS,**config.get('document_format',{}));dialog=tk.Toplevel(self);dialog.title('文档与格式设置');dialog.geometry('720x630');dialog.transient(self)
+        config=self.runner.config();fmt=dict(DEFAULTS,**config.get('document_format',{}));dialog=tk.Toplevel(self);dialog.title('文档与格式设置');dialog.geometry('760x690');dialog.transient(self)
         panel=ttk.Frame(dialog,padding=20);panel.pack(fill='both',expand=True);panel.columnconfigure(1,weight=1);variables={}
-        fields=[('base_document','已有本地文档（可选）',config.get('word_export',{}).get('base_document','')),('url','金山共享文档链接（可选）',config.get('wps',{}).get('url','')),('title','共享文档准确标题',config.get('wps',{}).get('title','')),('font','字体',fmt['font']),('body_size','正文字号（磅）',fmt['body_size']),('heading_size','账号标题字号（磅）',fmt['heading_size']),('line_spacing','行距（倍数）',fmt['line_spacing']),('article_gap','篇间距（磅）',fmt['article_gap'])]
+        fields=[('base_document','已有本地文档（可选）',config.get('word_export',{}).get('base_document','')),('url','金山共享文档链接（可选）',config.get('wps',{}).get('url','')),('title','共享文档准确标题',config.get('wps',{}).get('title','')),('reference_path','校对参考稿（可选）',config.get('proofreading',{}).get('reference_path','')),('font','字体',fmt['font']),('body_size','正文字号（磅）',fmt['body_size']),('heading_size','账号标题字号（磅）',fmt['heading_size']),('line_spacing','行距（倍数）',fmt['line_spacing']),('article_gap','篇间距（磅）',fmt['article_gap'])]
         for row,(key,label,value) in enumerate(fields):
             variables[key]=tk.StringVar(value=str(value));ttk.Label(panel,text=label).grid(row=row,column=0,sticky='w',pady=9);ttk.Entry(panel,textvariable=variables[key]).grid(row=row,column=1,sticky='ew',padx=(10,0))
         def choose():
             selected=filedialog.askopenfilename(parent=dialog,filetypes=[('WPS / Word 文档','*.docx')])
             if selected:variables['base_document'].set(selected)
         ttk.Button(panel,text='选择',command=choose).grid(row=0,column=2,padx=6)
+        def choose_reference():
+            selected=filedialog.askopenfilename(parent=dialog,filetypes=[('参考稿','*.docx *.txt *.md')])
+            if selected:variables['reference_path'].set(selected)
+        ttk.Button(panel,text='选择',command=choose_reference).grid(row=3,column=2,padx=6)
         flags={}
-        for row,(key,label,value) in enumerate([('inherit_existing','已有本地文档：沿用原有默认正文样式',fmt['inherit_existing']),('account_page_break','账号标题另起一页',fmt['account_page_break']),('cloud','启用共享文档追加（首次需备份及副本验证）',config.get('wps',{}).get('enabled',False))],8):
+        for row,(key,label,value) in enumerate([('inherit_existing','已有本地文档：沿用原有默认正文样式',fmt['inherit_existing']),('account_page_break','账号标题另起一页',fmt['account_page_break']),('cloud','启用共享文档追加（首次需备份及副本验证）',config.get('wps',{}).get('enabled',False))],len(fields)):
             flags[key]=tk.BooleanVar(value=value);ttk.Checkbutton(panel,text=label,variable=flags[key]).grid(row=row,column=0,columnspan=3,sticky='w',pady=8)
-        ttk.Label(panel,text='本地已有文档保留原文和原格式，追加后另存新文件；不覆盖原件。\n自定义样式用于新增内容。共享写入需先完成该目标的验证。',wraplength=650).grid(row=11,column=0,columnspan=3,sticky='w',pady=12)
+        ttk.Label(panel,text='本地已有文档保留原文和原格式，追加后另存新文件；不覆盖原件。\n自定义样式用于新增内容。共享写入需先完成该目标的验证。',wraplength=650).grid(row=len(fields)+3,column=0,columnspan=3,sticky='w',pady=12)
         def save():
             try:
                 values={k:v.get() for k,v in variables.items()};values.update({k:v.get() for k,v in flags.items()});save_settings(self.project,**values);self.stage.set('文档与格式设置已保存');dialog.destroy()
             except (ValueError,OSError) as exc:messagebox.showerror('设置未保存',str(exc),parent=dialog)
-        ttk.Button(panel,text='保存设置',command=save,style='Primary.TButton').grid(row=12,column=1,sticky='e')
+        ttk.Button(panel,text='保存设置',command=save,style='Primary.TButton').grid(row=len(fields)+4,column=1,sticky='e')
+
+    def use_description(self):
+        selected=self.tree.selection()
+        if not selected:return messagebox.showinfo('选择作品','请先选中一篇待处理作品。',parent=self)
+        item=self.items_by_row[selected[0]]
+        if not messagebox.askyesno('确认使用发布文案','将使用这篇作品完整的发布文案；若是视频，请确认没有需要转写的口播。继续吗？',parent=self):return
+        self.task(lambda:self.runner.use_description(item['id']))
+
+    def open_source(self):
+        import webbrowser
+        from urllib.parse import urlsplit
+        selected=self.tree.selection()
+        if not selected:return
+        url=self.items_by_row[selected[0]].get('url') or ''
+        if urlsplit(url).hostname in ('www.douyin.com','douyin.com') and urlsplit(url).scheme=='https':webbrowser.open(url)
 
     def open_file(self):
         if self.last_file and Path(self.last_file).is_file():
